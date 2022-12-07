@@ -203,6 +203,11 @@ class MainWindow(tk.Frame):
             self.listbox_after.insert(0, filename)
 
     def delete_from_listbox(self):
+        # TODO: リストから削除
+        pass
+
+    def show_spectra(self):
+        # TODO: リストをクリックしたらスペクトルを表示
         pass
 
     def download(self):
