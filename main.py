@@ -1,198 +1,231 @@
+import os
+import json
 import tkinter as tk
+from tkinterdnd2 import TkinterDnD, DND_FILES
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
-import matplotlib.patches as patches
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
-from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
 
 
-def logger(func):
-    def wrapped_func(*args, **kwargs):
-        print(func.__name__, 'start')
-        func(*args, **kwargs)
-        print(func.__name__, 'end')
-    return wrapped_func
+class MainWindow(tk.Frame):
+    def __init__(self, master):
+        super().__init__(master)
+        self.master = master
 
+        with open('./data/data.json', 'r') as f:
+            self.database = json.load(f)
 
-def lorentzian(x, intensity, X0, HWHM):
-    return intensity * HWHM ** 2 / ((x - X0) ** 2 + HWHM ** 2)
-
-
-class DataLoader:
-    def __init__(self, filename, measurement):
-        self.filename = filename
-        self.measurement = measurement
         self.df_ref = None
-        self.data_type = None
-        self.need_center = False
-        self.df_selected = None
-        self.picked = self.zooming = False
-        self.line_list = []
-        self.rect_list = []
+        self.dict_df = {}
+        self.dict_df_calibrated = {}
 
-        self.magnification = 1
+        self.create_widgets()
 
-        self.load()
-        self.check_shape()
-        if self.need_center:
-            self.input_center()
-
-        self.run_GUI()
-
-    def load(self):
-        extension = self.filename.split('.')[-1]
-        if extension in ['csv', 'asc']:
-            self.df_ref = pd.read_csv(self.filename)
-        else:
-            print('Invalid extension.')
-
-    def check_shape(self):
-        if self.df_ref is None:
-            return
-
-        if self.df_ref.shape[0] == 1023:
-            print('Andor Data')
-            self.data_type = 'Andor'
-        elif self.df_ref.shape[0] == 1014:
-            print('Renishaw Data')
-            self.data_type = 'Renishaw'
-        else:
-            print('Unexpected data type.')
-
-        if self.df_ref.shape[1] == 1:
-            self.need_center = True
-            self.df_ref.columns = ['y']
-        elif self.df_ref.shape[1] == 2:
-            self.need_center = False
-            self.df_ref.columns = ['x', 'y']
-
-    def input_center(self):
-        # center = int(input('Center Wavelength [nm]: '))
-        # width = int(input('Wavelength Range [nm] (Default 130): '))
-        center = 630
-        width = 130
-        x = np.linspace(center - width / 2, center + width / 2, self.df_ref.shape[0])
-        self.df_ref['x'] = x
-        self.df_ref.sort_index(axis='columns', inplace=True)
-
-    def run_GUI(self):
-        self.root = tk.Tk()
-        frame = tk.Frame(master=self.root)
-        frame.grid(row=0, column=0)
-        button_submit = tk.Button(master=frame, text='OK', command=self.submit)
-        button_submit.grid(row=1, column=0, sticky='NESW')
-        fig=plt.figure(figsize=(6, 3))
+    def create_widgets(self):
+        self.width = 300
+        self.height = 200
+        dpi = 100
+        fig = plt.figure(figsize=(self.width / dpi, self.height / dpi), dpi=dpi)
         self.ax = fig.add_subplot(111)
-        self.spec = self.ax.plot(self.df_ref['x'].values, self.df_ref['y'].values, color='k', linewidth=0.5)
-        self.ax.set_ylim(self.df_ref['y'].values.min() * 0.9, self.df_ref['y'].values.max() * 1.1)
-        self.canvas = FigureCanvasTkAgg(fig, frame)
-        self.canvas.get_tk_widget().grid(row=0, column=0)
-        fig.canvas.mpl_connect('scroll_event', self.zoom)
-        fig.canvas.mpl_connect('pick_event', self.delete_line)
-        fig.canvas.mpl_connect('button_press_event', self.add_line)
-        fig.canvas.mpl_connect('motion_notify_event', self.reset_state)
-        self.canvas.start_event_loop()
+        self.canvas = FigureCanvasTkAgg(fig, self.master)
+        self.canvas.get_tk_widget().grid(row=1, column=1)
 
-    @logger
-    def add_line(self, event):
-        if self.picked:
-            return
-        x_clicked = event.xdata
-        line = self.ax.vlines(x_clicked, *self.ax.get_ylim(), color='red', linewidth=0.5, picker=5)
-        self.line_list.append(line)
-        self.ax.set_ylim(self.df_ref['y'].values.min() * 0.9, self.df_ref['y'].values.max() * 1.1)
-        self.update_canvas()
+        frame_msg = tk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
+        frame_ref = tk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
+        frame_help = tk.LabelFrame(self.master, text='Help', width=self.width, height=self.height)
+        frame_before = tk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
+        frame_after = tk.LabelFrame(self.master, text='Calibrated data', width=self.width, height=self.height)
+        frame_msg.grid(row=0, column=0)
+        frame_ref.grid(row=0, column=1)
+        frame_help.grid(row=0, column=2)
+        frame_before.grid(row=1, column=0)
+        frame_after.grid(row=1, column=2)
+        frame_msg.pack_propagate(False)
+        frame_ref.grid_propagate(False)
+        frame_help.pack_propagate(False)
+        frame_before.pack_propagate(False)
+        frame_after.pack_propagate(False)
 
-    @logger
-    def zoom(self, event):
-        print(event)
-        self.picked = False
-        self.zooming = True
-        if event.button == 'down':
-            self.magnification = 1.2
-        elif event.button == 'up':
-            self.magnification = 0.8
-        else:
-            return
-        x = event.xdata
-        xmin, xmax = self.ax.get_xlim()
-        new_xmin = x - (x - xmin) / self.magnification
-        new_xmax = (xmax - x) / self.magnification + x
-        self.ax.set_xlim(new_xmin, new_xmax)
-        self.update_canvas()
-        print(len(self.line_list))
+        # frame_msg
+        self.msg = tk.StringVar(value='This is for Renishaw Raman data for now.\nSulfur, naphthalene and acetonitrile are supported.')
+        label_msg = tk.Label(master=frame_msg, textvariable=self.msg)
+        label_msg.pack()
 
-    @logger
-    def delete_line(self, event):
-        self.picked = True
-        self.line_list.remove(event.artist)
-        event.artist.remove()
-        # self.update_canvas()
+        # frame_ref
+        self.filename_ref = tk.StringVar()
+        entry_ref = tk.Entry(frame_ref, textvariable=self.filename_ref, width=40)
+        label_material = tk.Label(frame_ref, text='material:')
+        self.material = tk.StringVar(value=list(self.database.keys())[0])
+        optionmenu_material = tk.OptionMenu(frame_ref, self.material, *self.database.keys())
+        label_degree = tk.Label(frame_ref, text='degree:')
+        self.degree = tk.StringVar(value='1 (Linear)')
+        optionmenu_degree = tk.OptionMenu(frame_ref, self.degree, '1 (Linear)', '2 (Quadratic)', '3 (Cubic)')
+        self.button_train = tk.Button(frame_ref, text='TRAIN', command=self.train, state=tk.DISABLED)
+        entry_ref.grid(row=0, column=0, columnspan=2, sticky=tk.EW)
+        label_material.grid(row=1, column=0, sticky=tk.EW)
+        optionmenu_material.grid(row=1, column=1, sticky=tk.EW)
+        label_degree.grid(row=2, column=0, sticky=tk.EW)
+        optionmenu_degree.grid(row=2, column=1, sticky=tk.EW)
+        self.button_train.grid(row=3, column=0, columnspan=2, sticky=tk.EW)
 
-    @logger
-    def update_canvas(self):
-        self.picked = self.zooming = False
-        # 選択範囲の描画
-        for rect in self.rect_list:
-            rect.remove()
-        self.rect_list = []
-        self.line_list.sort(key=lambda x: x.properties()['segments'][0][0][0])
-        for i, line2 in enumerate(self.line_list):
-            if i % 2 == 1:
-                line1 = self.line_list[i - 1]
-                x1 = line1.properties()['segments'][0][0][0]
-                x2 = line2.properties()['segments'][0][0][0]
-                width = x2 - x1
-                y1, y2 = self.ax.get_ylim()
-                height = y2 - y1
-                r = patches.Rectangle(xy=(x1, y1), width=width, height=height, fc='red', alpha=0.3)
-                self.ax.add_patch(r)
-                self.rect_list.append(r)
+        # frame_msg
+        self.help = tk.StringVar(value='sulfur: 86 ~ 470 cm-1\nnaphthalene: 514 ~ 1576 cm-1\nacetonitrile: 2254 ~ 2940 cm-1\n\n参照ピークが・・・\n2本か3本しかないとき:Linear\n中心波長付近にあるとき: Quadratic\n全体に分布しているとき: Cubic')
+        label_help = tk.Label(master=frame_help, textvariable=self.help)
+        label_help.pack()
+
+        # frame_before
+        self.listbox_before = tk.Listbox(frame_before, height=8, width=40)
+        self.button_calibrate = tk.Button(frame_before, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
+        self.listbox_before.pack()
+        self.button_calibrate.pack()
+
+        # frame_after
+        self.listbox_after = tk.Listbox(frame_after, height=8, width=40)
+        self.button_download = tk.Button(frame_after, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
+        self.listbox_after.pack()
+        self.button_download.pack()
+
+    def train(self):
+        self.ax.clear()
+
+        x_ref_true_list = self.database[self.material.get()]
+        # 範囲外のピークは除外
+        x_ref_true_list = np.array(x_ref_true_list)
+        x_min, x_max = self.df_ref.x.min(), self.df_ref.x.max()
+        x_ref_true_list = x_ref_true_list[(x_ref_true_list > x_min) & (x_ref_true_list < x_max)]
+        # ピークを中心に十分広い範囲を探索する
+        peak_ranges = [[x-10, x+10] for x in x_ref_true_list]
+
+        # find peak from range nearby the right peaks
+        first_index_list = []
+        found_peak_list = []
+        for peak_range in peak_ranges:
+            partial = (peak_range[0] < self.df_ref.x) & (self.df_ref.x < peak_range[1])
+            first_index = np.where(partial)[0][0]  # 切り取った範囲の開始インデックス
+            first_index_list.append(first_index)
+
+            df_partial = self.df_ref[partial]
+            found_peaks, properties = find_peaks(df_partial.y, prominence=50)
+            if len(found_peaks) != 1:
+                self.msg.set('Training failed. Check the file or the condition.')
+                return
+            found_peak_list.append(found_peaks[0] + first_index)
+
+        self.ax.plot(self.df_ref.x, self.df_ref.y, color='k')
+        ymin, ymax = self.ax.get_ylim()
+        for peak_range in peak_ranges:
+            self.ax.vlines(peak_range[0], ymin, ymax, color='k')
+            self.ax.vlines(peak_range[1], ymin, ymax, color='k')
+
+        for first_index, found_peak in zip(first_index_list, found_peak_list):
+            self.ax.vlines(self.df_ref.x[found_peak], ymin, ymax, color='r', linewidth=1)
+
+        x_ref_extracted = self.df_ref.x.loc[found_peak_list]
+        self.pf = PolynomialFeatures(degree=int(self.degree.get()[0]))
+        x_ref_extracted_poly = self.pf.fit_transform(x_ref_extracted.values.reshape(-1, 1))
+
+        self.lr = LinearRegression()
+        self.lr.fit(x_ref_extracted_poly, np.array(x_ref_true_list).reshape(-1, 1))
+
         self.canvas.draw()
+        self.button_calibrate.config(state=tk.ACTIVE)
+        self.msg.set('Successfully trained.\nYou can now calibrate.')
 
-    def reset_state(self, event):
-        # self.picked = False
+    def calibrate(self):
+        for filename, df in self.dict_df.items():
+            x = self.pf.fit_transform(df.x.values.reshape(-1, 1))
+            x_calibrated = self.lr.predict(x)
+            data = np.hstack([x_calibrated, df.y.values.reshape(-1, 1)])
+            df_calibrated = pd.DataFrame(data=data, columns=['x', 'y'])
+
+            filename_new = '.'.join(filename.split('.')[:-1]) + f'_calibrated_by_{self.material.get()}.' + filename.split('.')[-1]
+
+            self.dict_df_calibrated[filename_new] = df_calibrated
+
+        self.update_listbox()
+        self.button_download.config(state=tk.ACTIVE)
+
+        self.msg.set('Successfully calibrated.\nYou can now download the calibrated data.')
+
+    def drop(self, event=None):
+        master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
+        dropped_place = ((event.y_root - master_geometry[1]) // self.height, (event.x_root - master_geometry[0]) // self.width)
+
+        filenames = [f.replace('{', '').replace('}', '') for f in event.data.split('} {')]
+        loaded_df_list = self.load(filenames)
+        if dropped_place == (0, 1):  # reference data
+            self.filename_ref.set(filenames[0])
+            self.df_ref = loaded_df_list[0]
+            self.button_train.config(state=tk.ACTIVE)
+        elif dropped_place == (1, 0):  # data to calibrate
+            for filename, df in zip(filenames, loaded_df_list):
+                self.dict_df[filename] = df
+            self.update_listbox()
+
+    def load(self, filenames):
+        msg = ''
+        df_list = []
+        for filename in filenames:
+            df = pd.read_csv(filename, sep='[:\t]', header=None, engine='python')
+            if df.shape[0] > 1024:  # sifからbatch conversionで変換したascファイルのとき
+                msg += 'Solis data loaded.\n'
+                df = df.loc[26:, 0:1]
+                df = df.reset_index(drop=True)
+            elif df.shape[0] == 1024:  # AutoRayleighで出力したascファイルのとき
+                msg += 'RAS data loaded.\n'
+            elif df.shape[0] == 1015:
+                msg += 'Renishaw Raman data loaded.\n'
+            else:
+                msg += 'Unsupported file．\n'
+            df.columns = ['x', 'y']
+            df = df.astype(float)
+
+            msg += f'directory: {os.path.dirname(filename)}\n'
+            msg += f'filename: {os.path.basename(filename)}\n'
+
+            df_list.append(df)
+
+        self.msg.set(msg)
+
+        return df_list
+
+    def update_listbox(self):
+        self.listbox_before.delete(0, tk.END)
+        for filename in self.dict_df.keys():
+            self.listbox_before.insert(0, filename)
+
+        self.listbox_after.delete(0, tk.END)
+        for filename in self.dict_df_calibrated.keys():
+            self.listbox_after.insert(0, filename)
+
+    def delete_from_listbox(self):
         pass
 
-    def submit(self):
-        self.root.destroy()
+    def download(self):
+        msg = ''
+        for filename, df in self.dict_df_calibrated.items():
+            df.to_csv(filename, sep='\t', index=False, header=False)
+            msg += 'Successfully downloaded.\n'
+            msg += f'directory: {os.path.dirname(filename)}\n'
+            msg += f'filename: {os.path.basename(filename)}\n'
+        self.msg.set(msg)
 
-        peak_detected = []
-        for i, line2 in enumerate(self.line_list):
-            if i % 2 == 1:
-                line1 = self.line_list[i - 1]
-                x1 = line1.properties()['segments'][0][0][0]
-                x2 = line2.properties()['segments'][0][0][0]
-                df_selected = self.df_ref[(x1 < self.df_ref['x']) & (self.df_ref['x'] < x2)]
-
-                x = df_selected['x'].values
-                y = df_selected['y'].values
-                indices_found, _ = find_peaks(y, prominence=40, distance=5)
-                if len(indices_found) == 0:
-                    print(f'Failed to detect around {x.min()} ~ {x.max()}')
-                    continue
-                pini = [y[indices_found[0]], x[indices_found[0]], 1]
-                popt, pcov = curve_fit(lorentzian, x, y, p0=pini)
-                peak_detected.append(popt[1])
-        print(peak_detected)
-        # self.pf = PolynomialFeatures(degree=3)
-        # x_detected_cubic = self.pf.fit_transform(x_detected_t)
-        #
-        # model = LinearRegression()  # 線形回帰
-        # model.fit(x_detected_cubic, self.peaks_target)
-
-
+    def quit(self):
+        self.master.quit()
 
 
 def main():
-    filename = '/Volumes/GoogleDrive/共有ドライブ/Laboratory/Individuals/kaneda/Data_M1/220616/data_630/calibration_630.asc'
-    # filename = '/Volumes/GoogleDrive/共有ドライブ/Laboratory/Individuals/kaneda/Data_M1/221013/Raman/BNCNT532_x20_1_247__X_0.1__Y_-94.5425__Time_421.asc'
-    dl = DataLoader(filename, 'Rayleigh')
+    root = TkinterDnD.Tk()
+    app = MainWindow(master=root)
+    root.protocol('WM_DELETE_WINDOW', app.quit)
+    root.drop_target_register(DND_FILES)
+    root.dnd_bind('<<Drop>>', app.drop)
+    app.mainloop()
 
 
-if  __name__ == '__main__':
+if __name__ == '__main__':
     main()
