@@ -28,7 +28,7 @@ class MainWindow(tk.Frame):
     def create_widgets(self):
         self.width = 300
         self.height = 200
-        dpi = 100
+        dpi = 50
         fig = plt.figure(figsize=(self.width / dpi, self.height / dpi), dpi=dpi)
         self.ax = fig.add_subplot(111)
         self.canvas = FigureCanvasTkAgg(fig, self.master)
@@ -101,35 +101,40 @@ class MainWindow(tk.Frame):
         peak_ranges = [[x-10, x+10] for x in x_ref_true_list]
 
         # find peak from range nearby the right peaks
-        first_index_list = []
         found_peak_list = []
-        for peak_range in peak_ranges:
+        found_x_ref_true_list = []
+        for x_ref_true, peak_range in zip(x_ref_true_list, peak_ranges):
             partial = (peak_range[0] < self.df_ref.x) & (self.df_ref.x < peak_range[1])
             first_index = np.where(partial)[0][0]  # 切り取った範囲の開始インデックス
-            first_index_list.append(first_index)
 
             df_partial = self.df_ref[partial]
             found_peaks, properties = find_peaks(df_partial.y, prominence=50)
             if len(found_peaks) != 1:
-                self.msg.set('Training failed. Check the file or the condition.')
-                return
+                self.msg.set('Some peaks were not detected.')
             found_peak_list.append(found_peaks[0] + first_index)
+            found_x_ref_true_list.append(x_ref_true)
 
+        # スペクトルと探索範囲を描画
         self.ax.plot(self.df_ref.x, self.df_ref.y, color='k')
         ymin, ymax = self.ax.get_ylim()
         for peak_range in peak_ranges:
-            self.ax.vlines(peak_range[0], ymin, ymax, color='k')
-            self.ax.vlines(peak_range[1], ymin, ymax, color='k')
+            self.ax.vlines(peak_range[0], ymin, ymax, color='k', linewidth=1)
+            self.ax.vlines(peak_range[1], ymin, ymax, color='k', linewidth=1)
 
-        for first_index, found_peak in zip(first_index_list, found_peak_list):
+        # 見つかったピークを描画
+        for found_peak in found_peak_list:
             self.ax.vlines(self.df_ref.x[found_peak], ymin, ymax, color='r', linewidth=1)
 
+        # インデックスでxの値を取り出し
         x_ref_extracted = self.df_ref.x.loc[found_peak_list]
+
+        # 多項式に変換
         self.pf = PolynomialFeatures(degree=int(self.degree.get()[0]))
         x_ref_extracted_poly = self.pf.fit_transform(x_ref_extracted.values.reshape(-1, 1))
 
+        # 回帰モデル
         self.lr = LinearRegression()
-        self.lr.fit(x_ref_extracted_poly, np.array(x_ref_true_list).reshape(-1, 1))
+        self.lr.fit(x_ref_extracted_poly, np.array(found_x_ref_true_list).reshape(-1, 1))
 
         self.canvas.draw()
         self.button_calibrate.config(state=tk.ACTIVE)
