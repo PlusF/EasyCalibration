@@ -79,12 +79,18 @@ class MainWindow(tk.Frame):
 
         # frame_before
         self.listbox_before = tk.Listbox(frame_before, height=8, width=40)
+        self.listbox_before.bind('<<ListboxSelect>>', self.show_spectrum_before)
+        self.listbox_before.bind('<Button-1>', self.show_spectrum_before, '+')
+        # self.listbox_before.bind('<Button-2>', self.show_spectrum_before, '+')
+        # self.listbox_before.bind('<Button-3>', self.show_spectrum_before, '+')
         self.button_calibrate = tk.Button(frame_before, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
         self.listbox_before.pack()
         self.button_calibrate.pack()
 
         # frame_after
         self.listbox_after = tk.Listbox(frame_after, height=8, width=40)
+        self.listbox_after.bind('<<ListboxSelect>>', self.show_spectrum_after)
+        self.listbox_before.bind('<Button-3>', self.show_spectrum_after, '+')
         self.button_download = tk.Button(frame_after, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
         self.listbox_after.pack()
         self.button_download.pack()
@@ -207,11 +213,22 @@ class MainWindow(tk.Frame):
         for filename in self.dict_df_calibrated.keys():
             self.listbox_after.insert(0, filename)
 
-    def delete_from_listbox(self):
+    def delete_from_listbox(self,event):
+        print(self.listbox_before.curselection())
+        print('delete')
         # TODO: リストから削除
         pass
 
-    def show_spectra(self):
+    def show_spectrum_before(self, event):
+        print(self.listbox_before.curselection())
+        print(event.num)
+        print('show')
+        # TODO: リストをクリックしたらスペクトルを表示
+        pass
+
+    def show_spectrum_after(self, event):
+        print(self.listbox_after.curselection())
+        print(event.num)
         # TODO: リストをクリックしたらスペクトルを表示
         pass
 
