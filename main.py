@@ -1,6 +1,7 @@
 import os
 import json
 import tkinter as tk
+from tkinter import messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import numpy as np
 import pandas as pd
@@ -9,6 +10,14 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.signal import find_peaks
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
+
+
+def update_plot(func):
+    def wrapper(*args, **kwargs):
+        args[0].ax.clear()
+        func(*args, **kwargs)
+        args[0].canvas.draw()
+    return wrapper
 
 
 class MainWindow(tk.Frame):
@@ -58,6 +67,8 @@ class MainWindow(tk.Frame):
         # frame_ref
         self.filename_ref = tk.StringVar()
         entry_ref = tk.Entry(frame_ref, textvariable=self.filename_ref, width=40)
+        entry_ref.bind('<Button-1>', lambda e: self.show_spectrum_ref())
+        entry_ref.bind('<Button-3>', lambda e: self.delete_spectrum_ref())
         label_material = tk.Label(frame_ref, text='material:')
         self.material = tk.StringVar(value=list(self.database.keys())[0])
         optionmenu_material = tk.OptionMenu(frame_ref, self.material, *self.database.keys())
@@ -78,26 +89,23 @@ class MainWindow(tk.Frame):
         label_help.pack()
 
         # frame_before
-        self.listbox_before = tk.Listbox(frame_before, height=8, width=40)
-        self.listbox_before.bind('<<ListboxSelect>>', self.show_spectrum_before)
-        self.listbox_before.bind('<Button-1>', self.show_spectrum_before, '+')
-        # self.listbox_before.bind('<Button-2>', self.show_spectrum_before, '+')
-        # self.listbox_before.bind('<Button-3>', self.show_spectrum_before, '+')
+        self.listbox_before = tk.Listbox(frame_before, selectmode="extended", height=8, width=40)
+        self.listbox_before.bind('<<ListboxSelect>>', lambda e: self.show_spectrum_before())
+        self.listbox_before.bind('<Button-3>', lambda e: self.delete_from_listbox_before())
         self.button_calibrate = tk.Button(frame_before, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
         self.listbox_before.pack()
         self.button_calibrate.pack()
 
         # frame_after
-        self.listbox_after = tk.Listbox(frame_after, height=8, width=40)
-        self.listbox_after.bind('<<ListboxSelect>>', self.show_spectrum_after)
-        self.listbox_before.bind('<Button-3>', self.show_spectrum_after, '+')
+        self.listbox_after = tk.Listbox(frame_after, selectmode="extended", height=8, width=40)
+        self.listbox_after.bind('<<ListboxSelect>>', lambda e: self.show_spectrum_after())
+        self.listbox_after.bind('<Button-3>', lambda e: self.delete_from_listbox_after())
         self.button_download = tk.Button(frame_after, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
         self.listbox_after.pack()
         self.button_download.pack()
 
+    @update_plot
     def train(self):
-        self.ax.clear()
-
         x_ref_true_list = self.database[self.material.get()]
         # 範囲外のピークは除外
         x_ref_true_list = np.array(x_ref_true_list)
@@ -119,6 +127,11 @@ class MainWindow(tk.Frame):
                 self.msg.set('Some peaks were not detected.')
             found_peak_list.append(found_peaks[0] + first_index)
             found_x_ref_true_list.append(x_ref_true)
+
+        # 一個も見つからなかった場合
+        if len(found_peak_list) == 0:
+            self.msg.set('Training failed.')
+            return
 
         # スペクトルと探索範囲を描画
         self.ax.plot(self.df_ref.x, self.df_ref.y, color='k')
@@ -142,7 +155,6 @@ class MainWindow(tk.Frame):
         self.lr = LinearRegression()
         self.lr.fit(x_ref_extracted_poly, np.array(found_x_ref_true_list).reshape(-1, 1))
 
-        self.canvas.draw()
         self.button_calibrate.config(state=tk.ACTIVE)
         self.msg.set('Successfully trained.\nYou can now calibrate.')
 
@@ -162,6 +174,7 @@ class MainWindow(tk.Frame):
 
         self.msg.set('Successfully calibrated.\nYou can now download the calibrated data.')
 
+    @update_plot
     def drop(self, event=None):
         master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
         dropped_place = ((event.y_root - master_geometry[1]) // self.height, (event.x_root - master_geometry[0]) // self.width)
@@ -171,10 +184,12 @@ class MainWindow(tk.Frame):
         if dropped_place == (0, 1):  # reference data
             self.filename_ref.set(filenames[0])
             self.df_ref = loaded_df_list[0]
+            self.show_spectrum(self.df_ref)
             self.button_train.config(state=tk.ACTIVE)
         elif dropped_place == (1, 0):  # data to calibrate
             for filename, df in zip(filenames, loaded_df_list):
                 self.dict_df[filename] = df
+            self.show_spectrum(loaded_df_list[-1])
             self.update_listbox()
 
     def load(self, filenames):
@@ -213,24 +228,79 @@ class MainWindow(tk.Frame):
         for filename in self.dict_df_calibrated.keys():
             self.listbox_after.insert(0, filename)
 
-    def delete_from_listbox(self,event):
-        print(self.listbox_before.curselection())
-        print('delete')
-        # TODO: リストから削除
-        pass
+    def show_spectrum(self, df):
+        self.ax.plot(df.x, df.y, color='k')
 
-    def show_spectrum_before(self, event):
-        print(self.listbox_before.curselection())
-        print(event.num)
-        print('show')
-        # TODO: リストをクリックしたらスペクトルを表示
-        pass
+    @update_plot
+    def show_spectrum_ref(self):
+        if self.df_ref is None:
+            return
+        self.show_spectrum(self.df_ref)
 
-    def show_spectrum_after(self, event):
-        print(self.listbox_after.curselection())
-        print(event.num)
-        # TODO: リストをクリックしたらスペクトルを表示
-        pass
+    @update_plot
+    def delete_spectrum_ref(self):
+        if self.df_ref is None:
+            return
+        ok = messagebox.askyesno('確認', f'Delete {self.filename_ref.get()}?')
+        if not ok:
+            return
+        self.df_ref = None
+        self.filename_ref.set('')
+        self.msg.set(f'Deleted {self.filename_ref.get()}.')
+
+    @update_plot
+    def show_spectrum_before(self):
+        if len(self.listbox_before.curselection()) == 0:
+            return
+        key = self.listbox_before.get(self.listbox_before.curselection()[0])
+        self.show_spectrum(self.dict_df[key])
+
+    @update_plot
+    def delete_from_listbox_before(self):
+        if len(self.listbox_before.curselection()) == 0:
+            return
+        keys = []
+        msg = ''
+        for i in self.listbox_before.curselection():
+            key = self.listbox_before.get(i)
+            keys.append(key)
+            msg += f'\n"{key}"'
+        ok = messagebox.askyesno('確認', f'Delete {msg}?')
+        if not ok:
+            return
+
+        for key in keys:
+            del self.dict_df[key]
+
+        self.update_listbox()
+        self.msg.set(f'Deleted {msg}.')
+
+    @update_plot
+    def show_spectrum_after(self):
+        if len(self.listbox_after.curselection()) == 0:
+            return
+        key = self.listbox_after.get(self.listbox_after.curselection()[0])
+        self.show_spectrum(self.dict_df_calibrated[key])
+
+    @update_plot
+    def delete_from_listbox_after(self):
+        if len(self.listbox_after.curselection()) == 0:
+            return
+        keys = []
+        msg = ''
+        for i in self.listbox_after.curselection():
+            key = self.listbox_after.get(i)
+            keys.append(key)
+            msg += f'\n"{key}"'
+        ok = messagebox.askyesno('確認', f'Delete {msg}?')
+        if not ok:
+            return
+
+        for key in keys:
+            del self.dict_df_calibrated[key]
+
+        self.update_listbox()
+        self.msg.set(f'Deleted {msg}.')
 
     def download(self):
         msg = ''
