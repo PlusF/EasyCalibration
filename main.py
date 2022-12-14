@@ -90,7 +90,7 @@ class MainWindow(tk.Frame):
 
         # frame_before
         self.listbox_before = tk.Listbox(frame_before, selectmode="extended", height=8, width=40)
-        self.listbox_before.bind('<<ListboxSelect>>', lambda e: self.show_spectrum_before())
+        self.listbox_before.bind('<Button-1>', lambda e: self.show_spectrum_before())
         self.listbox_before.bind('<Button-3>', lambda e: self.delete_from_listbox_before())
         self.button_calibrate = tk.Button(frame_before, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
         self.listbox_before.pack()
