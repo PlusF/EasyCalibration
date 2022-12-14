@@ -8,15 +8,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.signal import find_peaks
+from scipy.optimize import curve_fit
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
+
+
+def lorentzian(x, x0, a, b, c):
+    return a / ((x - x0) ** 2 + b) + c
 
 
 def update_plot(func):
     def wrapper(*args, **kwargs):
         args[0].ax.clear()
-        func(*args, **kwargs)
+        ret = func(*args, **kwargs)
         args[0].canvas.draw()
+        return ret
     return wrapper
 
 
@@ -90,22 +96,22 @@ class MainWindow(tk.Frame):
 
         # frame_before
         self.listbox_before = tk.Listbox(frame_before, selectmode="extended", height=8, width=40)
-        self.listbox_before.bind('<Button-1>', lambda e: self.show_spectrum_before())
-        self.listbox_before.bind('<Button-3>', lambda e: self.delete_from_listbox_before())
+        self.listbox_before.bind('<Button-1>', self.select_spectrum)
+        self.listbox_before.bind('<Button-3>', self.delete_spectrum)
         self.button_calibrate = tk.Button(frame_before, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
         self.listbox_before.pack()
         self.button_calibrate.pack()
 
         # frame_after
         self.listbox_after = tk.Listbox(frame_after, selectmode="extended", height=8, width=40)
-        self.listbox_after.bind('<<ListboxSelect>>', lambda e: self.show_spectrum_after())
-        self.listbox_after.bind('<Button-3>', lambda e: self.delete_from_listbox_after())
+        self.listbox_after.bind('<Button-1>', self.select_spectrum)
+        self.listbox_after.bind('<Button-3>', self.delete_spectrum)
         self.button_download = tk.Button(frame_after, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
         self.listbox_after.pack()
         self.button_download.pack()
 
     @update_plot
-    def train(self):
+    def find_peaks(self):
         x_ref_true_list = self.database[self.material.get()]
         # 範囲外のピークは除外
         x_ref_true_list = np.array(x_ref_true_list)
@@ -115,21 +121,29 @@ class MainWindow(tk.Frame):
         peak_ranges = [[x-10, x+10] for x in x_ref_true_list]
 
         # find peak from range nearby the right peaks
-        found_peak_list = []
+        fitted_x_ref_list = []
         found_x_ref_true_list = []
         for x_ref_true, peak_range in zip(x_ref_true_list, peak_ranges):
             partial = (peak_range[0] < self.df_ref.x) & (self.df_ref.x < peak_range[1])
             first_index = np.where(partial)[0][0]  # 切り取った範囲の開始インデックス
 
             df_partial = self.df_ref[partial]
+
+            # まず最大値を検出
             found_peaks, properties = find_peaks(df_partial.y, prominence=50)
             if len(found_peaks) != 1:
                 self.msg.set('Some peaks were not detected.')
-            found_peak_list.append(found_peaks[0] + first_index)
+                continue
+
+            # それをもとにローレンツ関数でフィッティング
+            p0 = [self.df_ref.x[found_peaks[0] + first_index], df_partial.y.max(), 1, df_partial.y.min()]
+            popt, pcov = curve_fit(lorentzian, df_partial.x.values, df_partial.y.values, p0=p0)
+
+            fitted_x_ref_list.append(popt[0])
             found_x_ref_true_list.append(x_ref_true)
 
         # 一個も見つからなかった場合
-        if len(found_peak_list) == 0:
+        if len(fitted_x_ref_list) == 0:
             self.msg.set('Training failed.')
             return
 
@@ -141,19 +155,21 @@ class MainWindow(tk.Frame):
             self.ax.vlines(peak_range[1], ymin, ymax, color='k', linewidth=1)
 
         # 見つかったピークを描画
-        for found_peak in found_peak_list:
-            self.ax.vlines(self.df_ref.x[found_peak], ymin, ymax, color='r', linewidth=1)
+        for fitted_x in fitted_x_ref_list:
+            self.ax.vlines(fitted_x, ymin, ymax, color='r', linewidth=1)
 
-        # インデックスでxの値を取り出し
-        x_ref_extracted = self.df_ref.x.loc[found_peak_list]
+        return found_x_ref_true_list, fitted_x_ref_list
 
+    def train(self):
+        found_x_ref_true_list, fitted_x_ref_list = self.find_peaks()
         # 多項式に変換
+        fitted_x_ref_list = np.array(fitted_x_ref_list)
         self.pf = PolynomialFeatures(degree=int(self.degree.get()[0]))
-        x_ref_extracted_poly = self.pf.fit_transform(x_ref_extracted.values.reshape(-1, 1))
+        found_x_ref_poly = self.pf.fit_transform(fitted_x_ref_list.reshape(-1, 1))
 
-        # 回帰モデル
+        # 回帰モデルを訓練
         self.lr = LinearRegression()
-        self.lr.fit(x_ref_extracted_poly, np.array(found_x_ref_true_list).reshape(-1, 1))
+        self.lr.fit(found_x_ref_poly, np.array(found_x_ref_true_list).reshape(-1, 1))
 
         self.button_calibrate.config(state=tk.ACTIVE)
         self.msg.set('Successfully trained.\nYou can now calibrate.')
@@ -177,20 +193,23 @@ class MainWindow(tk.Frame):
     @update_plot
     def drop(self, event=None):
         master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
-        dropped_place = ((event.y_root - master_geometry[1]) // self.height, (event.x_root - master_geometry[0]) // self.width)
+        dropped_place = ((event.y_root - master_geometry[1] - 30) // self.height, (event.x_root - master_geometry[0] - 8) // self.width)
 
         filenames = [f.replace('{', '').replace('}', '') for f in event.data.split('} {')]
-        loaded_df_list = self.load(filenames)
         if dropped_place == (0, 1):  # reference data
+            loaded_df_list = self.load(filenames)
             self.filename_ref.set(filenames[0])
             self.df_ref = loaded_df_list[0]
             self.show_spectrum(self.df_ref)
             self.button_train.config(state=tk.ACTIVE)
         elif dropped_place == (1, 0):  # data to calibrate
+            loaded_df_list = self.load(filenames)
             for filename, df in zip(filenames, loaded_df_list):
                 self.dict_df[filename] = df
             self.show_spectrum(loaded_df_list[-1])
             self.update_listbox()
+        else:
+            self.msg.set('Drop at proper place.')
 
     def load(self, filenames):
         msg = ''
@@ -249,55 +268,36 @@ class MainWindow(tk.Frame):
         self.msg.set(f'Deleted {self.filename_ref.get()}.')
 
     @update_plot
-    def show_spectrum_before(self):
-        if len(self.listbox_before.curselection()) == 0:
+    def select_spectrum(self, event):
+        if len(event.widget.curselection()) == 0:
             return
-        key = self.listbox_before.get(self.listbox_before.curselection()[0])
-        self.show_spectrum(self.dict_df[key])
+        key = event.widget.get(event.widget.curselection()[0])
+
+        if event.widget == self.listbox_before:
+            self.show_spectrum(self.dict_df[key])
+        elif event.widget == self.listbox_after:
+            self.show_spectrum(self.dict_df_calibrated[key])
 
     @update_plot
-    def delete_from_listbox_before(self):
-        if len(self.listbox_before.curselection()) == 0:
+    def delete_spectrum(self, event):
+        if len(event.widget.curselection()) == 0:
             return
         keys = []
         msg = ''
-        for i in self.listbox_before.curselection():
-            key = self.listbox_before.get(i)
+        for i in event.widget.curselection():
+            key = event.widget.get(i)
             keys.append(key)
             msg += f'\n"{key}"'
         ok = messagebox.askyesno('確認', f'Delete {msg}?')
         if not ok:
             return
 
-        for key in keys:
-            del self.dict_df[key]
-
-        self.update_listbox()
-        self.msg.set(f'Deleted {msg}.')
-
-    @update_plot
-    def show_spectrum_after(self):
-        if len(self.listbox_after.curselection()) == 0:
-            return
-        key = self.listbox_after.get(self.listbox_after.curselection()[0])
-        self.show_spectrum(self.dict_df_calibrated[key])
-
-    @update_plot
-    def delete_from_listbox_after(self):
-        if len(self.listbox_after.curselection()) == 0:
-            return
-        keys = []
-        msg = ''
-        for i in self.listbox_after.curselection():
-            key = self.listbox_after.get(i)
-            keys.append(key)
-            msg += f'\n"{key}"'
-        ok = messagebox.askyesno('確認', f'Delete {msg}?')
-        if not ok:
-            return
-
-        for key in keys:
-            del self.dict_df_calibrated[key]
+        if event.widget == self.listbox_before:
+            for key in keys:
+                del self.dict_df[key]
+        elif event.widget == self.listbox_after:
+            for key in keys:
+                del self.dict_df_calibrated[key]
 
         self.update_listbox()
         self.msg.set(f'Deleted {msg}.')
