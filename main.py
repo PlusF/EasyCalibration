@@ -13,7 +13,7 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
 
 
-def lorentzian(x, x0, a, b, c):
+def Lorentzian(x: np.ndarray, x0: float, a: float, b: float, c: float) -> np.ndarray:
     return a / ((x - x0) ** 2 + b) + c
 
 
@@ -27,7 +27,7 @@ def update_plot(func):
 
 
 class MainWindow(tk.Frame):
-    def __init__(self, master):
+    def __init__(self, master: tk.Tk):
         super().__init__(master)
         self.master = master
 
@@ -40,7 +40,7 @@ class MainWindow(tk.Frame):
 
         self.create_widgets()
 
-    def create_widgets(self):
+    def create_widgets(self) -> None:
         self.width = 300
         self.height = 200
         dpi = 50
@@ -111,7 +111,7 @@ class MainWindow(tk.Frame):
         self.button_download.pack()
 
     @update_plot
-    def find_peaks(self):
+    def find_peaks(self) -> [list[float], list[float]]:
         x_ref_true_list = self.database[self.material.get()]
         # 範囲外のピークは除外
         x_ref_true_list = np.array(x_ref_true_list)
@@ -137,7 +137,7 @@ class MainWindow(tk.Frame):
 
             # それをもとにローレンツ関数でフィッティング
             p0 = [self.df_ref.x[found_peaks[0] + first_index], df_partial.y.max(), 1, df_partial.y.min()]
-            popt, pcov = curve_fit(lorentzian, df_partial.x.values, df_partial.y.values, p0=p0)
+            popt, pcov = curve_fit(Lorentzian, df_partial.x.values, df_partial.y.values, p0=p0)
 
             fitted_x_ref_list.append(popt[0])
             found_x_ref_true_list.append(x_ref_true)
@@ -160,7 +160,7 @@ class MainWindow(tk.Frame):
 
         return found_x_ref_true_list, fitted_x_ref_list
 
-    def train(self):
+    def train(self) -> None:
         found_x_ref_true_list, fitted_x_ref_list = self.find_peaks()
         # 多項式に変換
         fitted_x_ref_list = np.array(fitted_x_ref_list)
@@ -174,7 +174,7 @@ class MainWindow(tk.Frame):
         self.button_calibrate.config(state=tk.ACTIVE)
         self.msg.set('Successfully trained.\nYou can now calibrate.')
 
-    def calibrate(self):
+    def calibrate(self) -> None:
         for filename, df in self.dict_df.items():
             x = self.pf.fit_transform(df.x.values.reshape(-1, 1))
             x_calibrated = self.lr.predict(x)
@@ -191,7 +191,7 @@ class MainWindow(tk.Frame):
         self.msg.set('Successfully calibrated.\nYou can now download the calibrated data.')
 
     @update_plot
-    def drop(self, event=None):
+    def drop(self, event=None) -> None:
         master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
         dropped_place = ((event.y_root - master_geometry[1] - 30) // self.height, (event.x_root - master_geometry[0] - 8) // self.width)
 
@@ -211,7 +211,7 @@ class MainWindow(tk.Frame):
         else:
             self.msg.set('Drop at proper place.')
 
-    def load(self, filenames):
+    def load(self, filenames) -> list[pd.DataFrame]:
         msg = ''
         df_list = []
         for filename in filenames:
@@ -238,7 +238,7 @@ class MainWindow(tk.Frame):
 
         return df_list
 
-    def update_listbox(self):
+    def update_listbox(self) -> None:
         self.listbox_before.delete(0, tk.END)
         for filename in self.dict_df.keys():
             self.listbox_before.insert(0, filename)
@@ -247,17 +247,17 @@ class MainWindow(tk.Frame):
         for filename in self.dict_df_calibrated.keys():
             self.listbox_after.insert(0, filename)
 
-    def show_spectrum(self, df):
+    def show_spectrum(self, df: pd.DataFrame) -> None:
         self.ax.plot(df.x, df.y, color='k')
 
     @update_plot
-    def show_spectrum_ref(self):
+    def show_spectrum_ref(self) -> None:
         if self.df_ref is None:
             return
         self.show_spectrum(self.df_ref)
 
     @update_plot
-    def delete_spectrum_ref(self):
+    def delete_spectrum_ref(self) -> None:
         if self.df_ref is None:
             return
         ok = messagebox.askyesno('確認', f'Delete {self.filename_ref.get()}?')
@@ -268,7 +268,7 @@ class MainWindow(tk.Frame):
         self.msg.set(f'Deleted {self.filename_ref.get()}.')
 
     @update_plot
-    def select_spectrum(self, event):
+    def select_spectrum(self, event) -> None:
         if len(event.widget.curselection()) == 0:
             return
         key = event.widget.get(event.widget.curselection()[0])
@@ -279,7 +279,7 @@ class MainWindow(tk.Frame):
             self.show_spectrum(self.dict_df_calibrated[key])
 
     @update_plot
-    def delete_spectrum(self, event):
+    def delete_spectrum(self, event) -> None:
         if len(event.widget.curselection()) == 0:
             return
         keys = []
@@ -302,7 +302,7 @@ class MainWindow(tk.Frame):
         self.update_listbox()
         self.msg.set(f'Deleted {msg}.')
 
-    def download(self):
+    def download(self) -> None:
         msg = ''
         for filename, df in self.dict_df_calibrated.items():
             df.to_csv(filename, sep='\t', index=False, header=False)
@@ -311,7 +311,7 @@ class MainWindow(tk.Frame):
             msg += f'filename: {os.path.basename(filename)}\n'
         self.msg.set(msg)
 
-    def quit(self):
+    def quit(self) -> None:
         self.master.quit()
 
 
