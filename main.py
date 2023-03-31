@@ -43,13 +43,13 @@ class MainWindow(tk.Frame):
         self.canvas.get_tk_widget().grid(row=1, column=1)
 
         frame_msg = tk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
-        frame_ref = tk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
         frame_help = tk.LabelFrame(self.master, text='Help', width=self.width, height=self.height * 2)
         frame_listbox = tk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
+        frame_ref = tk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
         frame_msg.grid(row=0, column=0)
-        frame_ref.grid(row=0, column=1)
+        frame_listbox.grid(row=0, column=1)
         frame_help.grid(row=0, column=2, rowspan=2)
-        frame_listbox.grid(row=1, column=0)
+        frame_ref.grid(row=1, column=0)
         frame_msg.pack_propagate(False)
         frame_ref.grid_propagate(False)
         frame_help.pack_propagate(False)
@@ -163,11 +163,19 @@ class MainWindow(tk.Frame):
 
     @update_plot
     def drop(self, event=None) -> None:
-        master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
-        dropped_place = ((event.y_root - master_geometry[1] - 30) // self.height, (event.x_root - master_geometry[0] - 8) // self.width)
+        self.canvas_drop.place_forget()
 
+        master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
+
+        dropped_place = (event.y_root - master_geometry[1] - 30) / self.height
+
+        if os.name == 'posix':
+            threshold = 2
+        else:
+            threshold = 1
         filenames = [f.replace('{', '').replace('}', '') for f in event.data.split('} {')]
-        if dropped_place == (0, 1):  # reference data
+
+        if dropped_place > threshold:  # reference data
             filename = filenames[0]
             if self.calibrator.filename_ref != '':
                 self.calibrator.delete_file(self.calibrator.filename_ref)
@@ -178,7 +186,7 @@ class MainWindow(tk.Frame):
             self.check_data_type(filename)
             self.button_calibrate.config(state=tk.ACTIVE)
             self.button_download.config(state=tk.DISABLED)
-        elif dropped_place == (1, 0):  # data to calibrate
+        else:  # data to calibrate
             self.calibrator.load_raw_list(filenames)
             self.show_spectrum(self.calibrator.spec_dict[filenames[0]])
             self.update_listbox()
