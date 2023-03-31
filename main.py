@@ -56,7 +56,7 @@ class MainWindow(tk.Frame):
         frame_listbox.pack_propagate(False)
 
         # frame_msg
-        self.msg = tk.StringVar(value='This is for Renishaw Raman data for now.\nSulfur, naphthalene and acetonitrile are supported.')
+        self.msg = tk.StringVar(value='Please drag & drop data files.')
         label_msg = tk.Label(master=frame_msg, textvariable=self.msg)
         label_msg.pack()
 
