@@ -91,15 +91,18 @@ class MainWindow(tk.Frame):
 
         # frame_msg
         self.help = tk.StringVar(value='Raman\n'
-                                       'sulfur: 86 ~ 470 cm-1\n'
-                                       'naphthalene: 514 ~ 1576 cm-1\n'
-                                       '1,4-Bis(2-methylstyryl)benzene: 1178 ~ 1627 cm-1\n'
-                                       'acetonitrile: 2254 ~ 2940 cm-1\n\n'
+                                       '  sulfur: 86 ~ 470 cm-1\n'
+                                       '  naphthalene: 514 ~ 1576 cm-1\n'
+                                       '  1,4-Bis(2-methylstyryl)benzene: 1178 ~ 1627 cm-1\n'
+                                       '  acetonitrile: 2254 ~ 2940 cm-1\n\n'
                                        '参照ピークが・・・\n2本か3本しかないとき:Linear\n'
                                        '中心波長付近にあるとき: Quadratic\n'
                                        '全体に分布しているとき: Cubic\n\n'
                                        'easyをonにするとフィッティングなしで\n'
-                                       '\t最大値抽出でピーク検出が行われます\n')
+                                       '  最大値抽出でピーク検出が行われます\n\n'
+                                       'Rayleighのデータはずれが大きく正しくできない\n'
+                                       '  ことがあります。重要なものはSolisを使って\n'
+                                       '  キャリブレーションしてください。')
         label_help = tk.Label(master=frame_help, textvariable=self.help, justify=tk.LEFT)
         label_help.pack()
 
@@ -110,6 +113,15 @@ class MainWindow(tk.Frame):
         self.button_download = tk.Button(frame_listbox, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
         self.listbox_before.pack()
         self.button_download.pack()
+
+        # canvas_drop
+        self.canvas_drop = tk.Canvas(self.master, width=self.width * 3, height=self.height * 2)
+        self.canvas_drop.create_rectangle(0, 0, self.width * 3, self.height, fill='lightgray')
+        self.canvas_drop.create_rectangle(0, self.height, self.width * 3, self.height * 2, fill='gray')
+        self.canvas_drop.create_text(self.width * 3 / 2, self.height / 2, text='Data to Calibrate',
+                                     font=('Arial', 30))
+        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 3 / 2, text='Reference Data',
+                                     font=('Arial', 30))
 
     def update_material(self, event=None):
         self.optionmenu_material['menu'].delete(0, 'end')
@@ -171,6 +183,12 @@ class MainWindow(tk.Frame):
             self.show_spectrum(self.calibrator.spec_dict[filenames[0]])
             self.update_listbox()
             self.button_download.config(state=tk.DISABLED)
+
+    def drop_enter(self, event: TkinterDnD.DnDEvent) -> None:
+        self.canvas_drop.place(anchor='nw', x=0, y=0)
+
+    def drop_leave(self, event: TkinterDnD.DnDEvent) -> None:
+        self.canvas_drop.place_forget()
 
     def check_data_type(self, filename):
         if self.calibrator.spec_dict[filename].device == 'Renishaw':
@@ -270,6 +288,8 @@ def main():
     app = MainWindow(master=root)
     root.protocol('WM_DELETE_WINDOW', app.quit)
     root.drop_target_register(DND_FILES)
+    root.dnd_bind('<<DropEnter>>', app.drop_enter)
+    root.dnd_bind('<<DropLeave>>', app.drop_leave)
     root.dnd_bind('<<Drop>>', app.drop)
     app.mainloop()
 
