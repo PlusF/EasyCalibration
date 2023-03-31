@@ -170,9 +170,9 @@ class MainWindow(tk.Frame):
         dropped_place = (event.y_root - master_geometry[1] - 30) / self.height
 
         if os.name == 'posix':
-            threshold = 2
-        else:
             threshold = 1
+        else:
+            threshold = 0.5
         filenames = [f.replace('{', '').replace('}', '') for f in event.data.split('} {')]
 
         if dropped_place > threshold:  # reference data
