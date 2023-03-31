@@ -1,7 +1,6 @@
-numpy==1.23.4
-pandas==1.5.1
-matplotlib==3.6.1
-scipy~=1.9.3
-sklearn~=0.0
-scikit-learn~=1.1.2
-tkinterdnd2==0.3.0
+numpy
+pandas
+matplotlib
+tkinterdnd2
+git+https://github.com/PlusF/DataLoader
+git+https://github.com/PlusF/Calibrator
