@@ -185,7 +185,11 @@ class MainWindow(tk.Frame):
             threshold = 1
         else:
             threshold = 0.5
-        filenames = [f.replace('{', '').replace('}', '') for f in event.data.split('} {')]
+
+        if event.data[0] == '{':
+            filenames = list(map(lambda x: x.strip('{').strip('}'), event.data.split('} {')))
+        else:
+            filenames = event.data.split()
 
         if dropped_place > threshold:  # reference data
             filename = filenames[0]
