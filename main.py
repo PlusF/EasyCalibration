@@ -139,24 +139,35 @@ class MainWindow(tk.Frame):
         self.calibrator.set_material(self.material.get())
         self.calibrator.set_dimension(int(self.dimension.get()[0]))
         self.calibrator.set_function(self.function.get())
+        self.calibrator.set_search_width(4)
         ok = self.calibrator.calibrate(easy=self.easy.get())
         if not ok:
             self.msg.set('Calibration failed.')
             return
         self.update_listbox()
         self.button_download.config(state=tk.ACTIVE)
-        self.msg.set('Successfully calibrated.\nYou can now download the calibrated data.')
+        msg = 'Successfully calibrated.\nYou can now download the calibrated data.\n'
 
         self.setattr_to_all_raw('xdata', self.calibrator.xdata)
         self.setattr_to_all_raw('abs_path_ref', self.calibrator.filename_ref)
         self.setattr_to_all_raw('calibration', self.calibrator.calibration_info)
 
         spec_ref = self.calibrator.spec_dict[self.calibrator.filename_ref]
-        self.ax.plot(spec_ref.xdata, spec_ref.ydata, color='k')
+        self.ax.plot(self.calibrator.xdata, spec_ref.ydata, color='k', label='Calibrated spectrum')
         ymin, ymax = self.ax.get_ylim()
 
-        for fitted_x in self.calibrator.fitted_x:
-            self.ax.vlines(fitted_x, ymin, ymax, color='r', linewidth=1)
+        msg += 'Found peak, True value\n'
+        for i, (fitted_x, true_x) in enumerate(zip(self.calibrator.fitted_x, self.calibrator.found_x_true)):
+            msg += f'{fitted_x:.2f}, {true_x:.2f}\n'
+            if i == 0:
+                self.ax.vlines(fitted_x, ymin, ymax, color='r', linewidth=1, label='Found peak')
+                self.ax.vlines(true_x, ymin, ymax, color='b', linewidth=1, label='True value')
+            else:
+                self.ax.vlines(fitted_x, ymin, ymax, color='r', linewidth=1)
+                self.ax.vlines(true_x, ymin, ymax, color='b', linewidth=1)
+        self.ax.legend()
+
+        self.msg.set(msg)
 
     def setattr_to_all_raw(self, key, value):
         for filename in self.calibrator.filename_raw_list:
@@ -215,6 +226,8 @@ class MainWindow(tk.Frame):
         for material in self.calibrator.get_material_list():
             if material in filename:
                 self.material.set(material)
+
+        self.change_measurement()
 
     def switch_easy(self):
         if self.easy.get():
