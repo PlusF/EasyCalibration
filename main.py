@@ -3,14 +3,9 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from tkinter import ttk
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from EasyCalibrator import EasyCalibrator
-
-
-def Lorentzian(x: np.ndarray, x0: float, a: float, b: float, c: float) -> np.ndarray:
-    return a / ((x - x0) ** 2 + b) + c
 
 
 def update_plot(func):
@@ -67,11 +62,11 @@ class MainWindow(tk.Frame):
         entry_ref.bind('<Button-2>', lambda e: self.delete_spectrum_ref())
 
         self.measurement = tk.StringVar(value=self.calibrator.get_measurement_list()[0])
-        optionmenu_measurement = tk.OptionMenu(frame_ref, self.measurement, *self.calibrator.get_measurement_list(), command=self.update_material)
-        self.center = tk.DoubleVar(value=self.calibrator.center)
-        combobox_center = ttk.Combobox(frame_ref, textvariable=self.center, values=[500, 630, 760], width=7, justify=tk.CENTER)
+        optionmenu_measurement = tk.OptionMenu(frame_ref, self.measurement, *self.calibrator.get_measurement_list(), command=self.change_measurement)
         self.material = tk.StringVar(value=self.calibrator.get_material_list()[0])
         self.optionmenu_material = tk.OptionMenu(frame_ref, self.material, *self.calibrator.get_material_list())
+        self.center = tk.DoubleVar(value=self.calibrator.center)
+        self.combobox_center = ttk.Combobox(frame_ref, textvariable=self.center, values=[500, 630, 760], width=7, justify=tk.CENTER, state=tk.DISABLED)
         self.dimension = tk.StringVar(value=self.calibrator.get_dimension_list()[0])
         optionmenu_dimension = tk.OptionMenu(frame_ref, self.dimension, *self.calibrator.get_dimension_list())
         self.function = tk.StringVar(value=self.calibrator.get_function_list()[0])
@@ -82,8 +77,8 @@ class MainWindow(tk.Frame):
 
         entry_ref.grid(row=0, column=0, columnspan=6)
         optionmenu_measurement.grid(row=1, column=0)
-        combobox_center.grid(row=1, column=1)
-        self.optionmenu_material.grid(row=1, column=2)
+        self.optionmenu_material.grid(row=1, column=1)
+        self.combobox_center.grid(row=1, column=2)
         optionmenu_dimension.grid(row=2, column=0)
         self.optionmenu_function.grid(row=2, column=1)
         checkbutton_easy.grid(row=2, column=2)
@@ -123,7 +118,13 @@ class MainWindow(tk.Frame):
         self.canvas_drop.create_text(self.width * 3 / 2, self.height * 3 / 2, text='Reference Data',
                                      font=('Arial', 30))
 
-    def update_material(self, event=None):
+    def change_measurement(self, event=None):
+        if self.measurement.get() == 'Raman':
+            self.combobox_center.config(state=tk.DISABLED)
+        elif self.measurement.get() == 'Rayleigh':
+            self.combobox_center.config(state=tk.ACTIVE)
+        self.calibrator.set_measurement(self.measurement.get())
+        # update material
         self.optionmenu_material['menu'].delete(0, 'end')
         material_list = self.calibrator.get_material_list()
         for material in material_list:
