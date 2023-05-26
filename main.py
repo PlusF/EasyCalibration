@@ -153,6 +153,8 @@ class MainWindow(tk.Frame):
         self.setattr_to_all_raw('calibration', self.calibrator.calibration_info)
 
         msg += 'Found peak, True value\n'
+        for i, (fitted_x, true_x) in enumerate(zip(self.calibrator.fitted_x, self.calibrator.found_x_true)):
+            msg += f'{fitted_x:.2f}, {true_x:.2f}\n'
         self.msg.set(msg)
         self.calibrator.show_fit_result(self.ax)
 
