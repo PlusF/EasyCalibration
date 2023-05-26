@@ -150,12 +150,7 @@ class MainWindow(tk.Frame):
         self.setattr_to_all_raw('abs_path_ref', self.calibrator.filename_ref)
         self.setattr_to_all_raw('calibration', self.calibrator.calibration_info)
 
-        spec_ref = self.calibrator.spec_dict[self.calibrator.filename_ref]
-        self.ax.plot(spec_ref.xdata, spec_ref.ydata, color='k')
-        ymin, ymax = self.ax.get_ylim()
-
-        for fitted_x in self.calibrator.fitted_x:
-            self.ax.vlines(fitted_x, ymin, ymax, color='r', linewidth=1)
+        self.calibrator.show_fit_result(self.ax)
 
     def setattr_to_all_raw(self, key, value):
         for filename in self.calibrator.filename_raw_list:
