@@ -17,9 +17,10 @@ class EasyCalibrator(Calibrator, DataLoader):
         self.wavelength_range = 134
 
     def load_raw_list(self, filenames):
-        self.filename_raw_list.extend(filenames)
-        self.load_files(filenames)
-        self.xdata = self.spec_dict[filenames[0]].xdata.copy()
+        ok_dict = self.load_files(filenames)
+        for filename, success in ok_dict.items():
+            if success:
+                self.filename_raw_list.append(filename)
 
     def load_ref(self, filename):
         self.filename_ref = filename

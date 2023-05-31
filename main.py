@@ -43,19 +43,23 @@ class MainWindow(tk.Frame):
         frame_listbox = tk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
         frame_ref = tk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
         frame_msg = tk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
-        button_help = tk.Button(self.master, text='HELP', command=self.show_help)
+        frame_button = tk.LabelFrame(self.master, text='', width=self.width)
         frame_listbox.grid(row=0, column=1)
         frame_ref.grid(row=1, column=1)
         frame_msg.grid(row=2, column=1)
-        button_help.grid(row=3, column=1)
+        frame_button.grid(row=3, column=1)
         frame_listbox.pack_propagate(False)
         frame_ref.grid_propagate(False)
         frame_msg.pack_propagate(False)
+        frame_button.pack_propagate(False)
 
-        # frame_msg
-        self.msg = tk.StringVar(value='Please drag & drop data files.')
-        label_msg = tk.Label(master=frame_msg, textvariable=self.msg)
-        label_msg.pack()
+        # frame_listbox
+        self.listbox_raw = tk.Listbox(frame_listbox, selectmode="extended", height=8, width=40)
+        self.listbox_raw.bind('<Button-1>', self.select_data)
+        self.listbox_raw.bind('<Button-2>', self.delete_data)
+        self.button_download = tk.Button(frame_listbox, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
+        self.listbox_raw.pack()
+        self.button_download.pack()
 
         # frame_ref
         width_ref = 9
@@ -91,21 +95,24 @@ class MainWindow(tk.Frame):
         checkbutton_easy.grid(row=2, column=2)
         self.button_calibrate.grid(row=3, column=0, columnspan=6)
 
-        # frame_before
-        self.listbox_before = tk.Listbox(frame_listbox, selectmode="extended", height=8, width=40)
-        self.listbox_before.bind('<Button-1>', self.select_spectrum)
-        self.listbox_before.bind('<Button-2>', self.delete_spectrum)
-        self.button_download = tk.Button(frame_listbox, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
-        self.listbox_before.pack()
-        self.button_download.pack()
+        # frame_msg
+        self.msg = tk.StringVar(value='Please drag & drop data files.')
+        label_msg = tk.Label(master=frame_msg, textvariable=self.msg)
+        label_msg.pack()
+
+        # frame_button
+        button_reset = tk.Button(frame_button, text='RESET', command=self.reset)
+        button_help = tk.Button(frame_button, text='HELP', command=self.show_help)
+        button_reset.grid(row=0, column=0)
+        button_help.grid(row=0, column=1)
 
         # canvas_drop
-        self.canvas_drop = tk.Canvas(self.master, width=self.width * 3, height=self.height * 2)
-        self.canvas_drop.create_rectangle(0, 0, self.width * 3, self.height, fill='lightgray')
-        self.canvas_drop.create_rectangle(0, self.height, self.width * 3, self.height * 2, fill='gray')
-        self.canvas_drop.create_text(self.width * 3 / 2, self.height / 2, text='Data to Calibrate',
+        self.canvas_drop = tk.Canvas(self.master, width=self.width * 3, height=self.height * 3)
+        self.canvas_drop.create_rectangle(0, 0, self.width * 3, self.height * 1.5, fill='lightgray')
+        self.canvas_drop.create_rectangle(0, self.height * 1.5, self.width * 3, self.height * 3, fill='gray')
+        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 3 / 4, text='Data to Calibrate',
                                      font=('Arial', 30))
-        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 3 / 2, text='Reference Data',
+        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 9 / 4, text='Reference Data',
                                      font=('Arial', 30))
 
     def change_measurement(self, event=None):
@@ -162,9 +169,9 @@ class MainWindow(tk.Frame):
         dropped_place = (event.y_root - master_geometry[1] - 30) / self.height
 
         if os.name == 'posix':
-            threshold = 1
+            threshold = 3 / 2
         else:
-            threshold = 0.5
+            threshold = 3 / 4
 
         if event.data[0] == '{':
             filenames = list(map(lambda x: x.strip('{').strip('}'), event.data.split('} {')))
@@ -220,9 +227,9 @@ class MainWindow(tk.Frame):
             self.optionmenu_function.config(state=tk.ACTIVE)
 
     def update_listbox(self) -> None:
-        self.listbox_before.delete(0, tk.END)
+        self.listbox_raw.delete(0, tk.END)
         for filename in self.calibrator.filename_raw_list:
-            self.listbox_before.insert(0, filename)
+            self.listbox_raw.insert(0, filename)
         if len(self.calibrator.filename_raw_list) == 0:
             self.button_download.config(state=tk.DISABLED)
 
@@ -248,16 +255,16 @@ class MainWindow(tk.Frame):
         self.calibrator.filename_ref = ''
 
     @update_plot
-    def select_spectrum(self, event) -> None:
+    def select_data(self, event) -> None:
         if len(event.widget.curselection()) == 0:
             return
         key = event.widget.get(event.widget.curselection()[0])
 
-        if event.widget == self.listbox_before:
+        if event.widget == self.listbox_raw:
             self.show_spectrum(self.calibrator.spec_dict[key])
 
     @update_plot
-    def delete_spectrum(self, event) -> None:
+    def delete_data(self, event) -> None:
         if len(event.widget.curselection()) == 0:
             return
         keys = []
@@ -270,7 +277,7 @@ class MainWindow(tk.Frame):
         if not ok:
             return
 
-        if event.widget == self.listbox_before:
+        if event.widget == self.listbox_raw:
             for key in keys:
                 self.calibrator.filename_raw_list.remove(key)
                 self.calibrator.delete_file(key)
@@ -284,6 +291,13 @@ class MainWindow(tk.Frame):
         for filename in self.calibrator.filename_raw_list:
             msg += os.path.basename(filename) + '\n'
         self.msg.set(msg)
+
+    @update_plot
+    def reset(self):
+        self.listbox_raw.delete(0, tk.END)
+        self.filename_ref.set('')
+        self.calibrator.__init__()
+        self.msg.set(f'Reset.')
 
     def show_help(self):
         messagebox.showinfo('HELP', '''
