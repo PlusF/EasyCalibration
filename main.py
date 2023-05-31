@@ -4,7 +4,7 @@ from tkinter import messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from tkinter import ttk
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from EasyCalibrator import EasyCalibrator
 
 
@@ -29,26 +29,28 @@ class MainWindow(tk.Frame):
         self.height = 200
         dpi = 50
         if os.name == 'posix':
-            fig = plt.figure(figsize=(self.width / 2/  dpi, self.height / 2 / dpi), dpi=dpi)
+            fig = plt.figure(figsize=(self.width / 2 /  dpi * 2, self.height / 2 / dpi * 3), dpi=dpi)
         else:
-            fig = plt.figure(figsize=(self.width / dpi, self.height / dpi), dpi=dpi)
+            fig = plt.figure(figsize=(self.width / dpi * 2, self.height / dpi * 3), dpi=dpi)
         self.ax = fig.add_subplot(111)
 
         self.canvas = FigureCanvasTkAgg(fig, self.master)
-        self.canvas.get_tk_widget().grid(row=1, column=1)
+        self.canvas.get_tk_widget().grid(row=0, column=0, rowspan=3)
+        toolbar = NavigationToolbar2Tk(self.canvas, self.master, pack_toolbar=False)
+        toolbar.update()
+        toolbar.grid(row=3, column=0)
 
-        frame_msg = tk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
-        frame_help = tk.LabelFrame(self.master, text='Help', width=self.width, height=self.height * 2)
         frame_listbox = tk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
         frame_ref = tk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
-        frame_msg.grid(row=0, column=0)
+        frame_msg = tk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
+        button_help = tk.Button(self.master, text='HELP', command=self.show_help)
         frame_listbox.grid(row=0, column=1)
-        frame_help.grid(row=0, column=2, rowspan=2)
-        frame_ref.grid(row=1, column=0)
-        frame_msg.pack_propagate(False)
-        frame_ref.grid_propagate(False)
-        frame_help.pack_propagate(False)
+        frame_ref.grid(row=1, column=1)
+        frame_msg.grid(row=2, column=1)
+        button_help.grid(row=3, column=1)
         frame_listbox.pack_propagate(False)
+        frame_ref.grid_propagate(False)
+        frame_msg.pack_propagate(False)
 
         # frame_msg
         self.msg = tk.StringVar(value='Please drag & drop data files.')
@@ -56,6 +58,7 @@ class MainWindow(tk.Frame):
         label_msg.pack()
 
         # frame_ref
+        width_ref = 9
         self.filename_ref = tk.StringVar()
         entry_ref = tk.Entry(frame_ref, textvariable=self.filename_ref, width=40)
         entry_ref.bind('<Button-1>', lambda e: self.show_spectrum_ref())
@@ -63,17 +66,21 @@ class MainWindow(tk.Frame):
 
         self.measurement = tk.StringVar(value=self.calibrator.get_measurement_list()[0])
         optionmenu_measurement = tk.OptionMenu(frame_ref, self.measurement, *self.calibrator.get_measurement_list(), command=self.change_measurement)
+        optionmenu_measurement.config(width=width_ref, justify=tk.CENTER)
         self.material = tk.StringVar(value=self.calibrator.get_material_list()[0])
         self.optionmenu_material = tk.OptionMenu(frame_ref, self.material, *self.calibrator.get_material_list())
+        self.optionmenu_material.config(width=width_ref, justify=tk.CENTER)
         self.center = tk.DoubleVar(value=self.calibrator.center)
-        self.combobox_center = ttk.Combobox(frame_ref, textvariable=self.center, values=[500, 630, 760], width=7, justify=tk.CENTER, state=tk.DISABLED)
+        self.combobox_center = ttk.Combobox(frame_ref, textvariable=self.center, values=[500, 630, 760], width=width_ref, justify=tk.CENTER, state=tk.DISABLED)
         self.dimension = tk.StringVar(value=self.calibrator.get_dimension_list()[0])
         optionmenu_dimension = tk.OptionMenu(frame_ref, self.dimension, *self.calibrator.get_dimension_list())
+        optionmenu_dimension.config(width=width_ref, justify=tk.CENTER)
         self.function = tk.StringVar(value=self.calibrator.get_function_list()[0])
         self.optionmenu_function = tk.OptionMenu(frame_ref, self.function, *self.calibrator.get_function_list())
+        self.optionmenu_function.config(width=width_ref, justify=tk.CENTER)
         self.easy = tk.BooleanVar(value=False)
         checkbutton_easy = tk.Checkbutton(frame_ref, text='easy', variable=self.easy, command=self.switch_easy)
-        self.button_calibrate = tk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
+        self.button_calibrate = tk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, width=width_ref, state=tk.DISABLED)
 
         entry_ref.grid(row=0, column=0, columnspan=6)
         optionmenu_measurement.grid(row=1, column=0)
@@ -83,23 +90,6 @@ class MainWindow(tk.Frame):
         self.optionmenu_function.grid(row=2, column=1)
         checkbutton_easy.grid(row=2, column=2)
         self.button_calibrate.grid(row=3, column=0, columnspan=6)
-
-        # frame_msg
-        self.help = tk.StringVar(value='Raman\n'
-                                       '  sulfur: 86 ~ 470 cm-1\n'
-                                       '  naphthalene: 514 ~ 1576 cm-1\n'
-                                       '  1,4-Bis(2-methylstyryl)benzene: 1178 ~ 1627 cm-1\n'
-                                       '  acetonitrile: 2254 ~ 2940 cm-1\n\n'
-                                       '参照ピークが・・・\n2本か3本しかないとき:Linear\n'
-                                       '中心波長付近にあるとき: Quadratic\n'
-                                       '全体に分布しているとき: Cubic\n\n'
-                                       'easyをonにするとフィッティングなしで\n'
-                                       '  最大値抽出でピーク検出が行われます\n\n'
-                                       'Rayleighのデータはずれが大きく正しくできない\n'
-                                       '  ことがあります。重要なものはSolisを使って\n'
-                                       '  キャリブレーションしてください。')
-        label_help = tk.Label(master=frame_help, textvariable=self.help, justify=tk.LEFT)
-        label_help.pack()
 
         # frame_before
         self.listbox_before = tk.Listbox(frame_listbox, selectmode="extended", height=8, width=40)
@@ -294,6 +284,23 @@ class MainWindow(tk.Frame):
         for filename in self.calibrator.filename_raw_list:
             msg += os.path.basename(filename) + '\n'
         self.msg.set(msg)
+
+    def show_help(self):
+        messagebox.showinfo('HELP', '''
+        Raman\n
+        sulfur: 86 ~ 470 cm-1\n
+          naphthalene: 514 ~ 1576 cm-1\n
+          1,4-Bis(2-methylstyryl)benzene: 1178 ~ 1627 cm-1\n
+          acetonitrile: 2254 ~ 2940 cm-1\n\n
+        参照ピークが・・・\n2本か3本しかないとき:Linear\n
+        中心波長付近にあるとき: Quadratic\n
+        全体に分布しているとき: Cubic\n\n
+        easyをonにするとフィッティングなしで\n
+          最大値抽出でピーク検出が行われます\n\n
+        Rayleighのデータはずれが大きく正しくできない\n
+          ことがあります。重要なものはSolisを使って\n
+          キャリブレーションしてください
+        ''')
 
     def quit(self) -> None:
         self.master.quit()
