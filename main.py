@@ -297,6 +297,8 @@ class MainWindow(tk.Frame):
         self.listbox_raw.delete(0, tk.END)
         self.filename_ref.set('')
         self.calibrator.__init__()
+        self.button_download.config(state=tk.DISABLED)
+        self.button_calibrate.config(state=tk.DISABLED)
         self.msg.set(f'Reset.')
 
     def show_help(self):
