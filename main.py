@@ -168,10 +168,7 @@ class MainWindow(tk.Frame):
 
         dropped_place = (event.y_root - master_geometry[1] - 30) / self.height
 
-        if os.name == 'posix':
-            threshold = 3 / 2
-        else:
-            threshold = 3 / 4
+        threshold = 3 / 2
 
         if event.data[0] == '{':
             filenames = list(map(lambda x: x.strip('{').strip('}'), event.data.split('} {')))
