@@ -1,11 +1,43 @@
 import os
 import tkinter as tk
+from tkinter import ttk
 from tkinter import messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
-from tkinter import ttk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from EasyCalibrator import EasyCalibrator
+from MyTooltip import MyTooltip
+
+font_lg = ('Arial', 24)
+font_md = ('Arial', 16)
+font_sm = ('Arial', 12)
+
+plt.rcParams['font.family'] = 'Arial'
+
+plt.rcParams['xtick.direction'] = 'in'
+plt.rcParams['ytick.direction'] = 'in'
+plt.rcParams['xtick.major.width'] = 1.0
+plt.rcParams['ytick.major.width'] = 1.0
+plt.rcParams['xtick.labelsize'] = 25
+plt.rcParams['ytick.labelsize'] = 25
+
+plt.rcParams['axes.linewidth'] = 1.0
+plt.rcParams['axes.labelsize'] = 35         # 軸ラベルのフォントサイズ
+plt.rcParams['axes.linewidth'] = 1.0        # グラフ囲う線の太さ
+
+plt.rcParams['legend.loc'] = 'best'        # 凡例の位置、"best"でいい感じのところ
+plt.rcParams['legend.frameon'] = True       # 凡例を囲うかどうか、Trueで囲う、Falseで囲わない
+plt.rcParams['legend.framealpha'] = 1.0     # 透過度、0.0から1.0の値を入れる
+plt.rcParams['legend.facecolor'] = 'white'  # 背景色
+plt.rcParams['legend.edgecolor'] = 'black'  # 囲いの色
+plt.rcParams['legend.fancybox'] = False     # Trueにすると囲いの四隅が丸くなる
+
+plt.rcParams['lines.linewidth'] = 1.0
+plt.rcParams['image.cmap'] = 'jet'
+plt.rcParams['figure.subplot.top'] = 0.95
+plt.rcParams['figure.subplot.bottom'] = 0.15
+plt.rcParams['figure.subplot.left'] = 0.1
+plt.rcParams['figure.subplot.right'] = 0.95
 
 
 def update_plot(func):
@@ -25,11 +57,24 @@ class MainWindow(tk.Frame):
         self.create_widgets()
 
     def create_widgets(self) -> None:
+        # スタイル設定
+        style = ttk.Style()
+        style.theme_use('winnative')
+        style.configure('TButton', font=font_md, width=14, padding=[0, 4, 0, 4], foreground='black')
+        style.configure('R.TButton', font=font_md, width=14, padding=[0, 4, 0, 4], foreground='red')
+        style.configure('TLabel', font=font_sm, padding=[0, 4, 0, 4], foreground='black')
+        style.configure('Color.TLabel', font=font_lg, padding=[0, 0, 0, 0], width=4, background='black')
+        style.configure('TEntry', font=font_md, width=14, padding=[0, 4, 0, 4], foreground='black')
+        style.configure('TCheckbutton', font=font_md, padding=[0, 4, 0, 4], foreground='black')
+        style.configure('TMenubutton', font=font_md, padding=[20, 4, 0, 4], foreground='black')
+        style.configure('TCombobox', font=font_md, padding=[20, 4, 0, 4], foreground='black')
+        style.configure('TTreeview', font=font_md, foreground='black')
+
         self.width = 400
         self.height = 200
         dpi = 50
         if os.name == 'posix':
-            fig = plt.figure(figsize=(self.width / 2 /  dpi * 2, self.height / 2 / dpi * 3), dpi=dpi)
+            fig = plt.figure(figsize=(self.width / 2 / dpi * 2, self.height / 2 / dpi * 3), dpi=dpi)
         else:
             fig = plt.figure(figsize=(self.width / dpi * 2, self.height / dpi * 3), dpi=dpi)
         self.ax = fig.add_subplot(111)
@@ -40,53 +85,61 @@ class MainWindow(tk.Frame):
         toolbar.update()
         toolbar.grid(row=3, column=0)
 
-        frame_listbox = tk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
-        frame_ref = tk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
-        frame_msg = tk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
-        frame_button = tk.LabelFrame(self.master, text='', width=self.width)
-        frame_listbox.grid(row=0, column=1)
+        frame_download = ttk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
+        frame_ref = ttk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
+        frame_msg = ttk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
+        frame_button = ttk.LabelFrame(self.master, text='', width=self.width)
+        frame_download.grid(row=0, column=1)
         frame_ref.grid(row=1, column=1)
         frame_msg.grid(row=2, column=1)
         frame_button.grid(row=3, column=1)
-        frame_listbox.pack_propagate(False)
-        frame_ref.grid_propagate(False)
-        frame_msg.pack_propagate(False)
-        frame_button.pack_propagate(False)
 
         # frame_listbox
-        self.listbox_raw = tk.Listbox(frame_listbox, selectmode="extended", height=8, width=40)
-        self.listbox_raw.bind('<Button-1>', self.select_data)
-        self.listbox_raw.bind('<Button-2>', self.delete_data)
-        self.button_download = tk.Button(frame_listbox, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
-        self.listbox_raw.pack()
+        self.treeview = ttk.Treeview(frame_download, height=6, selectmode=tk.EXTENDED)
+        self.treeview['columns'] = ['filename']
+        self.treeview.column('#0', width=40, stretch=tk.NO)
+        self.treeview.column('filename', width=400, anchor=tk.CENTER)
+        self.treeview.heading('#0', text='#')
+        self.treeview.heading('filename', text='filename')
+        self.treeview.bind('<<TreeviewSelect>>', self.select_data)
+        self.treeview.bind('<Button-2>', self.delete_data)
+        self.treeview.bind('<Button-3>', self.delete_data)
+
+        self.button_download = ttk.Button(frame_download, text='DOWNLOAD', command=self.download, state=tk.DISABLED)
+        self.treeview.pack()
         self.button_download.pack()
 
         # frame_ref
-        width_ref = 9
-        self.filename_ref = tk.StringVar()
-        entry_ref = tk.Entry(frame_ref, textvariable=self.filename_ref, width=40)
-        entry_ref.bind('<Button-1>', lambda e: self.show_spectrum_ref())
-        entry_ref.bind('<Button-2>', lambda e: self.delete_spectrum_ref())
+        self.filename_ref = tk.StringVar(value='please drag & drop')
+        label_ref = ttk.Label(frame_ref, textvariable=self.filename_ref)
+        label_ref.bind('<Button-1>', lambda e: self.show_spectrum_ref())
+        label_ref.bind('<Button-2>', lambda e: self.delete_spectrum_ref())
+        self.tooltip = MyTooltip(label_ref, '')
 
         self.measurement = tk.StringVar(value=self.calibrator.get_measurement_list()[0])
-        optionmenu_measurement = tk.OptionMenu(frame_ref, self.measurement, *self.calibrator.get_measurement_list(), command=self.change_measurement)
-        optionmenu_measurement.config(width=width_ref, justify=tk.CENTER)
         self.material = tk.StringVar(value=self.calibrator.get_material_list()[0])
-        self.optionmenu_material = tk.OptionMenu(frame_ref, self.material, *self.calibrator.get_material_list())
-        self.optionmenu_material.config(width=width_ref, justify=tk.CENTER)
         self.center = tk.DoubleVar(value=self.calibrator.center)
-        self.combobox_center = ttk.Combobox(frame_ref, textvariable=self.center, values=[500, 630, 760], width=width_ref, justify=tk.CENTER, state=tk.DISABLED)
         self.dimension = tk.StringVar(value=self.calibrator.get_dimension_list()[0])
-        optionmenu_dimension = tk.OptionMenu(frame_ref, self.dimension, *self.calibrator.get_dimension_list())
-        optionmenu_dimension.config(width=width_ref, justify=tk.CENTER)
         self.function = tk.StringVar(value=self.calibrator.get_function_list()[0])
-        self.optionmenu_function = tk.OptionMenu(frame_ref, self.function, *self.calibrator.get_function_list())
-        self.optionmenu_function.config(width=width_ref, justify=tk.CENTER)
         self.easy = tk.BooleanVar(value=False)
-        checkbutton_easy = tk.Checkbutton(frame_ref, text='easy', variable=self.easy, command=self.switch_easy)
-        self.button_calibrate = tk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, width=width_ref, state=tk.DISABLED)
+        self.optionmenu_function = ttk.OptionMenu(frame_ref, self.function, self.calibrator.get_function_list()[0], *self.calibrator.get_function_list())
+        self.optionmenu_function.config(width=10)
+        self.optionmenu_function['menu'].config(font=font_sm)
+        optionmenu_measurement = ttk.OptionMenu(frame_ref, self.measurement, self.calibrator.get_measurement_list()[0], *self.calibrator.get_measurement_list(), command=self.change_measurement)
+        optionmenu_measurement.config(width=10)
+        optionmenu_measurement['menu'].config(font=font_sm)
+        self.optionmenu_material = ttk.OptionMenu(frame_ref, self.material, self.calibrator.get_material_list()[0], *self.calibrator.get_material_list())
+        self.optionmenu_material.config(width=10)
+        self.optionmenu_material['menu'].config(font=font_sm)
+        self.combobox_center = ttk.Combobox(frame_ref, textvariable=self.center, values=[500, 630, 760], justify=tk.CENTER, state=tk.DISABLED)
+        self.combobox_center.config(width=10)
+        optionmenu_dimension = ttk.OptionMenu(frame_ref, self.dimension, *self.calibrator.get_dimension_list())
+        optionmenu_dimension.config(width=10)
+        optionmenu_dimension['menu'].config(font=font_sm)
+        checkbutton_easy = ttk.Checkbutton(frame_ref, text='easy', variable=self.easy, command=self.switch_easy)
+        self.button_calibrate = ttk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
 
-        entry_ref.grid(row=0, column=0, columnspan=6)
+        label_ref.grid(row=0, column=0, columnspan=6)
         optionmenu_measurement.grid(row=1, column=0)
         self.optionmenu_material.grid(row=1, column=1)
         self.combobox_center.grid(row=1, column=2)
@@ -97,12 +150,12 @@ class MainWindow(tk.Frame):
 
         # frame_msg
         self.msg = tk.StringVar(value='Please drag & drop data files.')
-        label_msg = tk.Label(master=frame_msg, textvariable=self.msg)
+        label_msg = ttk.Label(master=frame_msg, textvariable=self.msg)
         label_msg.pack()
 
         # frame_button
-        button_reset = tk.Button(frame_button, text='RESET', command=self.reset)
-        button_help = tk.Button(frame_button, text='HELP', command=self.show_help)
+        button_reset = ttk.Button(frame_button, text='RESET', command=self.reset)
+        button_help = ttk.Button(frame_button, text='HELP', command=self.show_help)
         button_reset.grid(row=0, column=0)
         button_help.grid(row=0, column=1)
 
@@ -136,12 +189,12 @@ class MainWindow(tk.Frame):
         self.calibrator.set_material(self.material.get())
         self.calibrator.set_dimension(int(self.dimension.get()[0]))
         self.calibrator.set_function(self.function.get())
-        self.calibrator.set_search_width(4)
+        self.calibrator.set_search_width(50)
         ok = self.calibrator.calibrate(easy=self.easy.get())
         if not ok:
             self.msg.set('Calibration failed.')
             return
-        self.update_listbox()
+        self.update_treeview()
         self.button_download.config(state=tk.ACTIVE)
         msg = 'Successfully calibrated.\nYou can now download the calibrated data.\n'
 
@@ -154,7 +207,6 @@ class MainWindow(tk.Frame):
             msg += f'{fitted_x:.2f}, {true_x:.2f}\n'
         self.msg.set(msg)
         self.calibrator.show_fit_result(self.ax)
-
 
     def setattr_to_all_raw(self, key, value):
         for filename in self.calibrator.filename_raw_list:
@@ -189,7 +241,7 @@ class MainWindow(tk.Frame):
         else:  # data to calibrate
             self.calibrator.load_raw_list(filenames)
             self.show_spectrum(self.calibrator.spec_dict[filenames[0]])
-            self.update_listbox()
+            self.update_treeview()
             self.button_download.config(state=tk.DISABLED)
 
     def drop_enter(self, event: TkinterDnD.DnDEvent) -> None:
@@ -223,12 +275,17 @@ class MainWindow(tk.Frame):
         else:
             self.optionmenu_function.config(state=tk.ACTIVE)
 
-    def update_listbox(self) -> None:
-        self.listbox_raw.delete(0, tk.END)
-        for filename in self.calibrator.filename_raw_list:
-            self.listbox_raw.insert(0, filename)
-        if len(self.calibrator.filename_raw_list) == 0:
-            self.button_download.config(state=tk.DISABLED)
+    def update_treeview(self) -> None:
+        self.treeview.delete(*self.treeview.get_children())
+        for i, filename in enumerate(self.calibrator.filename_raw_list):
+            self.treeview.insert(
+                '',
+                tk.END,
+                iid=str(i),
+                text=str(i),
+                values=[filename],
+                open=True,
+                )
 
     def show_spectrum(self, spec) -> None:
         self.ax.plot(spec.xdata, spec.ydata, color='k')
@@ -253,34 +310,24 @@ class MainWindow(tk.Frame):
 
     @update_plot
     def select_data(self, event) -> None:
-        if len(event.widget.curselection()) == 0:
+        if self.treeview.focus() == '':
             return
-        key = event.widget.get(event.widget.curselection()[0])
-
-        if event.widget == self.listbox_raw:
-            self.show_spectrum(self.calibrator.spec_dict[key])
+        key = self.treeview.item(self.treeview.focus())['values'][0]
+        self.show_spectrum(self.calibrator.spec_dict[key])
 
     @update_plot
     def delete_data(self, event) -> None:
-        if len(event.widget.curselection()) == 0:
+        if self.treeview.focus() == '':
             return
-        keys = []
-        msg = ''
-        for i in event.widget.curselection():
-            key = event.widget.get(i)
-            keys.append(key)
-            msg += f'\n"{key}"'
-        ok = messagebox.askyesno('確認', f'Delete {msg}?')
+        key = self.treeview.item(self.treeview.focus())['values'][0]
+        ok = messagebox.askyesno('確認', f'Delete {key}?')
         if not ok:
             return
+        self.calibrator.delete_file(key)
+        self.calibrator.filename_raw_list.remove(key)
 
-        if event.widget == self.listbox_raw:
-            for key in keys:
-                self.calibrator.filename_raw_list.remove(key)
-                self.calibrator.delete_file(key)
-
-        self.update_listbox()
-        self.msg.set(f'Deleted {msg}.')
+        self.update_treeview()
+        self.msg.set(f'Deleted {key}.')
 
     def download(self) -> None:
         self.calibrator.save_raw_files()
@@ -291,7 +338,7 @@ class MainWindow(tk.Frame):
 
     @update_plot
     def reset(self):
-        self.listbox_raw.delete(0, tk.END)
+        self.treeview.delete(*self.treeview.get_children())
         self.filename_ref.set('')
         self.calibrator.__init__()
         self.button_download.config(state=tk.DISABLED)
