@@ -1,11 +1,15 @@
 import os
+import webbrowser
+import numpy as np
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from EasyCalibrator import EasyCalibrator
+from calibrator import Calibrator
+from dataloader import DataLoader
 from MyTooltip import MyTooltip
 
 font_lg = ('Arial', 24)
@@ -53,7 +57,17 @@ class MainWindow(tk.Frame):
     def __init__(self, master: tk.Tk):
         super().__init__(master)
         self.master = master
-        self.calibrator = EasyCalibrator()
+        self.master.bind('<Control-Key-z>', self.undo)
+
+        self.x0, self.y0, self.x1, self.y1 = 0, 0, 0, 0
+        self.rectangles = []
+        self.ranges = []
+        self.drawing = False
+        self.rect_drawing = None
+
+        self.dl_raw = DataLoader()
+        self.dl_ref = DataLoader()
+        self.calibrator = Calibrator(measurement='Raman', material='sulfur', dimension=1)
         self.create_widgets()
 
     def create_widgets(self) -> None:
@@ -70,25 +84,29 @@ class MainWindow(tk.Frame):
         style.configure('TCombobox', font=font_md, padding=[20, 4, 0, 4], foreground='black')
         style.configure('TTreeview', font=font_md, foreground='black')
 
-        self.width = 400
-        self.height = 200
+        self.width_canvas = 800
+        self.height_canvas = 600
         dpi = 50
         if os.name == 'posix':
-            fig = plt.figure(figsize=(self.width / 2 / dpi * 2, self.height / 2 / dpi * 3), dpi=dpi)
+            fig = plt.figure(figsize=(self.width_canvas / 2 / dpi, self.height_canvas / 2 / dpi), dpi=dpi)
         else:
-            fig = plt.figure(figsize=(self.width / dpi * 2, self.height / dpi * 3), dpi=dpi)
+            fig = plt.figure(figsize=(self.width_canvas / dpi, self.height_canvas / dpi), dpi=dpi)
+
+        fig.canvas.mpl_connect('button_press_event', self.on_press)
+        fig.canvas.mpl_connect('motion_notify_event', self.draw_preview)
+        fig.canvas.mpl_connect('button_release_event', self.on_release)
         self.ax = fig.add_subplot(111)
 
         self.canvas = FigureCanvasTkAgg(fig, self.master)
         self.canvas.get_tk_widget().grid(row=0, column=0, rowspan=3)
-        toolbar = NavigationToolbar2Tk(self.canvas, self.master, pack_toolbar=False)
-        toolbar.update()
-        toolbar.grid(row=3, column=0)
+        self.toolbar = NavigationToolbar2Tk(self.canvas, self.master, pack_toolbar=False)
+        self.toolbar.update()
+        self.toolbar.grid(row=3, column=0)
 
-        frame_download = ttk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
-        frame_ref = ttk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
-        frame_msg = ttk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
-        frame_button = ttk.LabelFrame(self.master, text='', width=self.width)
+        frame_download = ttk.LabelFrame(self.master, text='Data to calibrate')
+        frame_ref = ttk.LabelFrame(self.master, text='Reference')
+        frame_msg = ttk.LabelFrame(self.master, text='Message')
+        frame_button = ttk.LabelFrame(self.master, text='')
         frame_download.grid(row=0, column=1)
         frame_ref.grid(row=1, column=1)
         frame_msg.grid(row=2, column=1)
@@ -110,7 +128,7 @@ class MainWindow(tk.Frame):
         self.button_download.pack()
 
         # frame_ref
-        self.filename_ref = tk.StringVar(value='please drag & drop')
+        self.filename_ref = tk.StringVar(value='')
         label_ref = ttk.Label(frame_ref, textvariable=self.filename_ref)
         label_ref.bind('<Button-1>', lambda e: self.show_spectrum_ref())
         label_ref.bind('<Button-2>', lambda e: self.delete_spectrum_ref())
@@ -118,10 +136,9 @@ class MainWindow(tk.Frame):
 
         self.measurement = tk.StringVar(value=self.calibrator.get_measurement_list()[0])
         self.material = tk.StringVar(value=self.calibrator.get_material_list()[0])
-        self.center = tk.DoubleVar(value=self.calibrator.center)
+        self.center = tk.DoubleVar(value=630)
         self.dimension = tk.StringVar(value=self.calibrator.get_dimension_list()[0])
         self.function = tk.StringVar(value=self.calibrator.get_function_list()[0])
-        self.easy = tk.BooleanVar(value=False)
         self.optionmenu_function = ttk.OptionMenu(frame_ref, self.function, self.calibrator.get_function_list()[0], *self.calibrator.get_function_list())
         self.optionmenu_function.config(width=10)
         self.optionmenu_function['menu'].config(font=font_sm)
@@ -136,7 +153,6 @@ class MainWindow(tk.Frame):
         optionmenu_dimension = ttk.OptionMenu(frame_ref, self.dimension, *self.calibrator.get_dimension_list())
         optionmenu_dimension.config(width=10)
         optionmenu_dimension['menu'].config(font=font_sm)
-        checkbutton_easy = ttk.Checkbutton(frame_ref, text='easy', variable=self.easy, command=self.switch_easy)
         self.button_calibrate = ttk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
 
         label_ref.grid(row=0, column=0, columnspan=6)
@@ -145,7 +161,6 @@ class MainWindow(tk.Frame):
         self.combobox_center.grid(row=1, column=2)
         optionmenu_dimension.grid(row=2, column=0)
         self.optionmenu_function.grid(row=2, column=1)
-        checkbutton_easy.grid(row=2, column=2)
         self.button_calibrate.grid(row=3, column=0, columnspan=6)
 
         # frame_msg
@@ -156,17 +171,133 @@ class MainWindow(tk.Frame):
         # frame_button
         button_reset = ttk.Button(frame_button, text='RESET', command=self.reset)
         button_help = ttk.Button(frame_button, text='HELP', command=self.show_help)
+        button_database = ttk.Button(frame_button, text='DATABASE', command=self.open_database)
         button_reset.grid(row=0, column=0)
         button_help.grid(row=0, column=1)
+        button_database.grid(row=0, column=2)
 
         # canvas_drop
-        self.canvas_drop = tk.Canvas(self.master, width=self.width * 3, height=self.height * 3)
-        self.canvas_drop.create_rectangle(0, 0, self.width * 3, self.height * 1.5, fill='lightgray')
-        self.canvas_drop.create_rectangle(0, self.height * 1.5, self.width * 3, self.height * 3, fill='gray')
-        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 3 / 4, text='Data to Calibrate',
+        self.canvas_drop = tk.Canvas(self.master, width=self.width_canvas, height=self.height_canvas)
+        self.canvas_drop.create_rectangle(0, 0, self.width_canvas, self.height_canvas / 2, fill='lightgray')
+        self.canvas_drop.create_rectangle(0, self.height_canvas / 2, self.width_canvas, self.height_canvas, fill='gray')
+        self.canvas_drop.create_text(self.width_canvas / 2, self.height_canvas * 1 / 4, text='Data to Calibrate',
                                      font=('Arial', 30))
-        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 9 / 4, text='Reference Data',
+        self.canvas_drop.create_text(self.width_canvas / 2, self.height_canvas * 3 / 4, text='Reference Data',
                                      font=('Arial', 30))
+
+    def assign_peaks(self):
+        x_true = self.calibrator.get_true_x()
+        found_x_true = []
+        for x0, y0, x1, y1 in self.ranges:
+            x_mid = (x0 + x1) / 2
+            diff = np.abs(x_true - x_mid)
+            idx = np.argmin(diff)
+            found_x_true.append(x_true[idx])
+        return found_x_true
+
+    @update_plot
+    def calibrate(self) -> None:
+        if len(self.ranges) == 0:
+            messagebox.showerror('Error', 'Choose range.')
+            self.show_spectrum_ref()
+            return
+        spec_ref = self.dl_ref.spec_dict[self.filename_ref.get()]
+        self.calibrator.set_data(spec_ref.xdata, spec_ref.ydata)
+        if self.measurement.get() == 'Rayleigh':
+            wavelength_range = 134
+            initial_xdata = np.linspace(self.center.get() - wavelength_range / 2,
+                                        self.center.get() + wavelength_range / 2,
+                                        self.dl_ref.spec_dict[self.filename_ref.get()].xdata.shape[0])
+            self.calibrator.xdata = initial_xdata
+        self.calibrator.set_measurement(self.measurement.get())
+        self.calibrator.set_material(self.material.get())
+        self.calibrator.set_dimension(int(self.dimension.get()[0]))
+        self.calibrator.set_function(self.function.get())
+        ok = self.calibrator.calibrate(mode='manual', ranges=self.ranges, x_true=self.assign_peaks())
+        if not ok:
+            self.msg.set('Calibration failed.')
+            return
+        self.button_calibrate.config(state=tk.DISABLED)
+        self.button_download.config(state=tk.ACTIVE)
+        msg = 'Successfully calibrated.\nYou can now download the calibrated data.\n'
+
+        self.setattr_to_all_raw('xdata', self.calibrator.xdata)
+        self.setattr_to_all_raw('abs_path_ref', self.filename_ref.get())
+        self.setattr_to_all_raw('calibration', self.calibrator.calibration_info)
+
+        msg += 'Found peak, True value\n'
+        for i, (fitted_x, true_x) in enumerate(zip(self.calibrator.fitted_x, self.calibrator.found_x_true)):
+            msg += f'{fitted_x:.2f}, {true_x:.2f}\n'
+        self.msg.set(msg)
+        for r in self.rectangles:
+            self.ax.add_patch(r)
+        self.calibrator.show_fit_result(self.ax)
+
+    def setattr_to_all_raw(self, key, value):
+        for spec in self.dl_raw.spec_dict.values():
+            setattr(spec, key, value)
+
+    @update_plot
+    def drop(self, event=None) -> None:
+        self.canvas_drop.place_forget()
+
+        master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
+
+        dropped_place = (event.y_root - master_geometry[1] - 30) / self.height_canvas
+
+        threshold = 1 / 2
+
+        if event.data[0] == '{':
+            filenames = list(map(lambda x: x.strip('{').strip('}'), event.data.split('} {')))
+        else:
+            filenames = event.data.split()
+
+        if dropped_place > threshold:  # reference data
+            filename = filenames[0]
+            if self.filename_ref.get() != '':
+                self.dl_ref.delete_file(self.filename_ref.get())
+            self.setattr_to_all_raw('abs_path_ref', filename)
+            self.filename_ref.set(filename)
+            self.tooltip.set(filename)
+            self.dl_ref.load_file(filename)
+            self.rectangles = []
+            self.ranges = []
+            self.show_spectrum(self.dl_ref.spec_dict[filename])
+            self.check_data_type(filename)
+            self.button_calibrate.config(state=tk.ACTIVE)
+            self.button_download.config(state=tk.DISABLED)
+        else:  # data to calibrate
+            self.dl_raw.load_files(filenames)
+            self.show_spectrum(self.dl_raw.spec_dict[filenames[0]])
+            self.update_treeview()
+            self.button_download.config(state=tk.DISABLED)
+
+    def drop_enter(self, event: TkinterDnD.DnDEvent) -> None:
+        self.canvas_drop.place(anchor='nw', x=0, y=0)
+
+    def drop_leave(self, event: TkinterDnD.DnDEvent) -> None:
+        self.canvas_drop.place_forget()
+
+    def check_data_type(self, filename):
+        # deviceで判別できる場合
+        if self.dl_ref.spec_dict[filename].device == 'Renishaw':
+            self.calibrator.set_measurement('Raman')
+            self.measurement.set('Raman')
+        elif self.dl_ref.spec_dict[filename].device in ['CSS']:
+            self.calibrator.set_measurement('Rayleigh')
+            self.measurement.set('Rayleigh')
+        self.change_measurement()
+        for center in ['500', '630', '760']:
+            if center in filename:
+                self.center.set(float(center))
+
+        # filenameに物質名が入っている場合
+        for measurement in self.calibrator.get_measurement_list():
+            for material in list(self.calibrator.database[measurement].keys())[1:]:
+                if material in filename:
+                    self.measurement.set(measurement)
+                    self.change_measurement()
+                    self.material.set(material)
 
     def change_measurement(self, event=None):
         if self.measurement.get() == 'Raman':
@@ -181,103 +312,9 @@ class MainWindow(tk.Frame):
             self.optionmenu_material['menu'].add_command(label=material, command=tk._setit(self.material, material))
         self.material.set(material_list[0])
 
-    @update_plot
-    def calibrate(self) -> None:
-        if self.measurement.get() == 'Rayleigh':
-            self.calibrator.set_initial_xdata(self.center.get())
-        self.calibrator.set_measurement(self.measurement.get())
-        self.calibrator.set_material(self.material.get())
-        self.calibrator.set_dimension(int(self.dimension.get()[0]))
-        self.calibrator.set_function(self.function.get())
-        self.calibrator.set_search_width(50)
-        ok = self.calibrator.calibrate(easy=self.easy.get())
-        if not ok:
-            self.msg.set('Calibration failed.')
-            return
-        self.update_treeview()
-        self.button_download.config(state=tk.ACTIVE)
-        msg = 'Successfully calibrated.\nYou can now download the calibrated data.\n'
-
-        self.setattr_to_all_raw('xdata', self.calibrator.xdata)
-        self.setattr_to_all_raw('abs_path_ref', self.calibrator.filename_ref)
-        self.setattr_to_all_raw('calibration', self.calibrator.calibration_info)
-
-        msg += 'Found peak, True value\n'
-        for i, (fitted_x, true_x) in enumerate(zip(self.calibrator.fitted_x, self.calibrator.found_x_true)):
-            msg += f'{fitted_x:.2f}, {true_x:.2f}\n'
-        self.msg.set(msg)
-        self.calibrator.show_fit_result(self.ax)
-
-    def setattr_to_all_raw(self, key, value):
-        for filename in self.calibrator.filename_raw_list:
-            setattr(self.calibrator.spec_dict[filename], key, value)
-
-    @update_plot
-    def drop(self, event=None) -> None:
-        self.canvas_drop.place_forget()
-
-        master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
-
-        dropped_place = (event.y_root - master_geometry[1] - 30) / self.height
-
-        threshold = 3 / 2
-
-        if event.data[0] == '{':
-            filenames = list(map(lambda x: x.strip('{').strip('}'), event.data.split('} {')))
-        else:
-            filenames = event.data.split()
-
-        if dropped_place > threshold:  # reference data
-            filename = filenames[0]
-            if self.calibrator.filename_ref != '':
-                self.calibrator.delete_file(self.calibrator.filename_ref)
-            self.setattr_to_all_raw('abs_path_ref', filename)
-            self.filename_ref.set(filename)
-            self.calibrator.load_ref(filename)
-            self.show_spectrum(self.calibrator.spec_dict[filename])
-            self.check_data_type(filename)
-            self.button_calibrate.config(state=tk.ACTIVE)
-            self.button_download.config(state=tk.DISABLED)
-        else:  # data to calibrate
-            self.calibrator.load_raw_list(filenames)
-            self.show_spectrum(self.calibrator.spec_dict[filenames[0]])
-            self.update_treeview()
-            self.button_download.config(state=tk.DISABLED)
-
-    def drop_enter(self, event: TkinterDnD.DnDEvent) -> None:
-        self.canvas_drop.place(anchor='nw', x=0, y=0)
-
-    def drop_leave(self, event: TkinterDnD.DnDEvent) -> None:
-        self.canvas_drop.place_forget()
-
-    def check_data_type(self, filename):
-        if self.calibrator.spec_dict[filename].device == 'Renishaw':
-            self.calibrator.set_measurement('Raman')
-            self.measurement.set('Raman')
-        elif self.calibrator.spec_dict[filename].device in ['Andor', 'CSS']:
-            self.calibrator.set_measurement('Rayleigh')
-            self.measurement.set('Rayleigh')
-            self.material.set(self.calibrator.get_material_list()[0])
-            self.easy.set(True)
-            self.optionmenu_function.config(state=tk.DISABLED)
-        for center in ['500', '630', '760']:
-            if center in filename:
-                self.center.set(float(center))
-        for material in self.calibrator.get_material_list():
-            if material in filename:
-                self.material.set(material)
-
-        self.change_measurement()
-
-    def switch_easy(self):
-        if self.easy.get():
-            self.optionmenu_function.config(state=tk.DISABLED)
-        else:
-            self.optionmenu_function.config(state=tk.ACTIVE)
-
     def update_treeview(self) -> None:
         self.treeview.delete(*self.treeview.get_children())
-        for i, filename in enumerate(self.calibrator.filename_raw_list):
+        for i, filename in enumerate(self.dl_raw.spec_dict.keys()):
             self.treeview.insert(
                 '',
                 tk.END,
@@ -292,28 +329,35 @@ class MainWindow(tk.Frame):
 
     @update_plot
     def show_spectrum_ref(self) -> None:
-        if self.calibrator.filename_ref == '':
+        if self.filename_ref.get() == '':
             return
-        self.show_spectrum(self.calibrator.spec_dict[self.calibrator.filename_ref])
+        # キャリブレーション後は詳細を表示
+        if self.calibrator.xdata_before is not None:
+            for r in self.rectangles:
+                self.ax.add_patch(r)
+            self.calibrator.show_fit_result(self.ax)
+        # キャリブレーション前はスペクトルのみ表示
+        else:
+            self.show_spectrum(self.dl_ref.spec_dict[self.filename_ref.get()])
 
     @update_plot
     def delete_spectrum_ref(self) -> None:
-        if self.calibrator.filename_ref == '':
+        if self.filename_ref.get() == '':
             return
         ok = messagebox.askyesno('確認', f'Delete {self.filename_ref.get()}?')
         if not ok:
             return
+        self.dl_ref.delete_file(self.filename_ref.get())
         self.msg.set(f'Deleted {self.filename_ref.get()}.')
         self.filename_ref.set('')
-        self.calibrator.delete_file(self.calibrator.filename_ref)
-        self.calibrator.filename_ref = ''
+        self.tooltip.set('')
 
     @update_plot
     def select_data(self, event) -> None:
         if self.treeview.focus() == '':
             return
         key = self.treeview.item(self.treeview.focus())['values'][0]
-        self.show_spectrum(self.calibrator.spec_dict[key])
+        self.show_spectrum(self.dl_raw.spec_dict[key])
 
     @update_plot
     def delete_data(self, event) -> None:
@@ -323,24 +367,102 @@ class MainWindow(tk.Frame):
         ok = messagebox.askyesno('確認', f'Delete {key}?')
         if not ok:
             return
-        self.calibrator.delete_file(key)
-        self.calibrator.filename_raw_list.remove(key)
+        self.dl_raw.delete_file(key)
 
         self.update_treeview()
         self.msg.set(f'Deleted {key}.')
 
+    def on_press(self, event):
+        if event.xdata is None or event.ydata is None:
+            return
+        # Toolbarのズーム機能を使っている状態では動作しないようにする
+        if self.toolbar._buttons['Zoom'].var.get():
+            return
+        self.x0 = event.xdata
+        self.y0 = event.ydata
+
+        self.drawing = True
+
+    def on_release(self, event):
+        if event.xdata is None or event.ydata is None:
+            return
+        # Toolbarのズーム機能を使っている状態では動作しないようにする
+        if self.toolbar._buttons['Zoom'].var.get():
+            return
+
+        # プレビュー用の矩形を消す
+        if self.rect_drawing is not None:
+            self.rect_drawing.remove()
+            self.rect_drawing = None
+
+        self.drawing = False
+
+        self.x1 = event.xdata
+        self.y1 = event.ydata
+        if self.x0 == self.x1 or self.y0 == self.y1:
+            return
+        if self.is_overlapped(self.x0, self.x1):
+            messagebox.showerror('Error', 'Overlapped.')
+            return
+        x0, x1 = sorted([self.x0, self.x1])
+        y0, y1 = sorted([self.y0, self.y1])
+        r = patches.Rectangle((x0, y0), x1 - x0, y1 - y0, linewidth=1, edgecolor='r',
+                              facecolor='none')
+        self.ax.add_patch(r)
+        self.rectangles.append(r)
+        self.ranges.append((x0, y0, x1, y1))
+        self.canvas.draw()
+
+    def draw_preview(self, event):
+        if event.xdata is None or event.ydata is None:
+            return
+        if not self.drawing:
+            return
+        # Toolbarのズーム機能を使っている状態では動作しないようにする
+        if self.toolbar._buttons['Zoom'].var.get():
+            return
+        if self.rect_drawing is not None:
+            self.rect_drawing.remove()
+        x1 = event.xdata
+        y1 = event.ydata
+        self.rect_drawing = patches.Rectangle((self.x0, self.y0), x1 - self.x0, y1 - self.y0, linewidth=0.5,
+                                              edgecolor='r', linestyle='dashed', facecolor='none')
+        self.ax.add_patch(self.rect_drawing)
+        self.canvas.draw()
+
+    def is_overlapped(self, x0, x1):
+        for x0_, y0_, x1_, y1_ in self.ranges:
+            if x0_ <= x0 <= x1_ or x0_ <= x1 <= x1_:
+                return True
+            if x0 <= x0_ <= x1 or x0 <= x1_ <= x1:
+                return True
+        return False
+
+    def undo(self, event):
+        if len(self.rectangles) == 0:
+            return
+        self.rectangles[-1].remove()
+        self.rectangles.pop()
+        self.ranges.pop()
+        self.canvas.draw()
+
     def download(self) -> None:
-        self.calibrator.save_raw_files()
         msg = 'Successfully downloaded.\n'
-        for filename in self.calibrator.filename_raw_list:
+        for filename in self.dl_raw.spec_dict.keys():
+            self.dl_raw.save(filename)
             msg += os.path.basename(filename) + '\n'
         self.msg.set(msg)
 
     @update_plot
     def reset(self):
+        self.rectangles = []
+        self.ranges = []
         self.treeview.delete(*self.treeview.get_children())
         self.filename_ref.set('')
-        self.calibrator.__init__()
+        self.tooltip.set('')
+        self.dl_raw.__init__()
+        self.dl_ref.__init__()
+        self.calibrator.__init__(measurement='Raman', material='sulfur', dimension=1)
         self.button_download.config(state=tk.DISABLED)
         self.button_calibrate.config(state=tk.DISABLED)
         self.msg.set(f'Reset.')
@@ -355,12 +477,13 @@ class MainWindow(tk.Frame):
         参照ピークが・・・\n2本か3本しかないとき:Linear\n
         中心波長付近にあるとき: Quadratic\n
         全体に分布しているとき: Cubic\n\n
-        easyをonにするとフィッティングなしで\n
-          最大値抽出でピーク検出が行われます\n\n
-        Rayleighのデータはずれが大きく正しくできない\n
+        Andorのデータはずれが大きく正しくできない\n
           ことがあります。重要なものはSolisを使って\n
           キャリブレーションしてください
         ''')
+
+    def open_database(self):
+        webbrowser.open('https://www.chem.ualberta.ca/~mccreery/ramanmaterials.html')
 
     def quit(self) -> None:
         self.master.quit()
