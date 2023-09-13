@@ -10,7 +10,7 @@ import matplotlib.patches as patches
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from calibrator import Calibrator
 from dataloader import DataLoader
-from MyTooltip import MyTooltip
+from tooltip import TtkTooltipLabel
 
 font_lg = ('Arial', 24)
 font_md = ('Arial', 16)
@@ -129,10 +129,9 @@ class MainWindow(tk.Frame):
 
         # frame_ref
         self.filename_ref = tk.StringVar(value='')
-        label_ref = ttk.Label(frame_ref, textvariable=self.filename_ref)
-        label_ref.bind('<Button-1>', lambda e: self.show_spectrum_ref())
-        label_ref.bind('<Button-2>', lambda e: self.delete_spectrum_ref())
-        self.tooltip = MyTooltip(label_ref, '')
+        self.label_ref = TtkTooltipLabel(frame_ref, text_tooltip='', textvariable=self.filename_ref, width=40)
+        self.label_ref.bind('<Button-1>', lambda e: self.show_spectrum_ref())
+        self.label_ref.bind('<Button-2>', lambda e: self.delete_spectrum_ref())
 
         self.measurement = tk.StringVar(value=self.calibrator.get_measurement_list()[0])
         self.material = tk.StringVar(value=self.calibrator.get_material_list()[0])
@@ -155,7 +154,7 @@ class MainWindow(tk.Frame):
         optionmenu_dimension['menu'].config(font=font_sm)
         self.button_calibrate = ttk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
 
-        label_ref.grid(row=0, column=0, columnspan=6)
+        self.label_ref.grid(row=0, column=0, columnspan=6)
         optionmenu_measurement.grid(row=1, column=0)
         self.optionmenu_material.grid(row=1, column=1)
         self.combobox_center.grid(row=1, column=2)
@@ -258,7 +257,7 @@ class MainWindow(tk.Frame):
                 self.dl_ref.delete_file(self.filename_ref.get())
             self.setattr_to_all_raw('abs_path_ref', filename)
             self.filename_ref.set(filename)
-            self.tooltip.set(filename)
+            self.label_ref.set_tooltip_text(filename)
             self.dl_ref.load_file(filename)
             self.rectangles = []
             self.ranges = []
@@ -350,7 +349,7 @@ class MainWindow(tk.Frame):
         self.dl_ref.delete_file(self.filename_ref.get())
         self.msg.set(f'Deleted {self.filename_ref.get()}.')
         self.filename_ref.set('')
-        self.tooltip.set('')
+        self.label_ref.set_tooltip_text('')
 
     @update_plot
     def select_data(self, event) -> None:
@@ -459,7 +458,7 @@ class MainWindow(tk.Frame):
         self.ranges = []
         self.treeview.delete(*self.treeview.get_children())
         self.filename_ref.set('')
-        self.tooltip.set('')
+        self.label_ref.set_tooltip_text('')
         self.dl_raw.__init__()
         self.dl_ref.__init__()
         self.calibrator.__init__(measurement='Raman', material='sulfur', dimension=1)
