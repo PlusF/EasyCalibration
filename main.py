@@ -1,4 +1,5 @@
 import os
+import webbrowser
 import numpy as np
 import tkinter as tk
 from tkinter import ttk
@@ -83,13 +84,13 @@ class MainWindow(tk.Frame):
         style.configure('TCombobox', font=font_md, padding=[20, 4, 0, 4], foreground='black')
         style.configure('TTreeview', font=font_md, foreground='black')
 
-        self.width = 400
-        self.height = 200
+        self.width_canvas = 800
+        self.height_canvas = 600
         dpi = 50
         if os.name == 'posix':
-            fig = plt.figure(figsize=(self.width / 2 / dpi * 2, self.height / 2 / dpi * 3), dpi=dpi)
+            fig = plt.figure(figsize=(self.width_canvas / 2 / dpi, self.height_canvas / 2 / dpi), dpi=dpi)
         else:
-            fig = plt.figure(figsize=(self.width / dpi * 2, self.height / dpi * 3), dpi=dpi)
+            fig = plt.figure(figsize=(self.width_canvas / dpi, self.height_canvas / dpi), dpi=dpi)
 
         fig.canvas.mpl_connect('button_press_event', self.on_press)
         fig.canvas.mpl_connect('motion_notify_event', self.draw_preview)
@@ -102,10 +103,10 @@ class MainWindow(tk.Frame):
         self.toolbar.update()
         self.toolbar.grid(row=3, column=0)
 
-        frame_download = ttk.LabelFrame(self.master, text='Data to calibrate', width=self.width, height=self.height)
-        frame_ref = ttk.LabelFrame(self.master, text='Reference', width=self.width, height=self.height)
-        frame_msg = ttk.LabelFrame(self.master, text='Message', width=self.width, height=self.height)
-        frame_button = ttk.LabelFrame(self.master, text='', width=self.width)
+        frame_download = ttk.LabelFrame(self.master, text='Data to calibrate')
+        frame_ref = ttk.LabelFrame(self.master, text='Reference')
+        frame_msg = ttk.LabelFrame(self.master, text='Message')
+        frame_button = ttk.LabelFrame(self.master, text='')
         frame_download.grid(row=0, column=1)
         frame_ref.grid(row=1, column=1)
         frame_msg.grid(row=2, column=1)
@@ -170,16 +171,18 @@ class MainWindow(tk.Frame):
         # frame_button
         button_reset = ttk.Button(frame_button, text='RESET', command=self.reset)
         button_help = ttk.Button(frame_button, text='HELP', command=self.show_help)
+        button_database = ttk.Button(frame_button, text='DATABASE', command=self.open_database)
         button_reset.grid(row=0, column=0)
         button_help.grid(row=0, column=1)
+        button_database.grid(row=0, column=2)
 
         # canvas_drop
-        self.canvas_drop = tk.Canvas(self.master, width=self.width * 3, height=self.height * 3)
-        self.canvas_drop.create_rectangle(0, 0, self.width * 3, self.height * 1.5, fill='lightgray')
-        self.canvas_drop.create_rectangle(0, self.height * 1.5, self.width * 3, self.height * 3, fill='gray')
-        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 3 / 4, text='Data to Calibrate',
+        self.canvas_drop = tk.Canvas(self.master, width=self.width_canvas, height=self.height_canvas)
+        self.canvas_drop.create_rectangle(0, 0, self.width_canvas, self.height_canvas / 2, fill='lightgray')
+        self.canvas_drop.create_rectangle(0, self.height_canvas / 2, self.width_canvas, self.height_canvas, fill='gray')
+        self.canvas_drop.create_text(self.width_canvas / 2, self.height_canvas * 1 / 4, text='Data to Calibrate',
                                      font=('Arial', 30))
-        self.canvas_drop.create_text(self.width * 3 / 2, self.height * 9 / 4, text='Reference Data',
+        self.canvas_drop.create_text(self.width_canvas / 2, self.height_canvas * 3 / 4, text='Reference Data',
                                      font=('Arial', 30))
 
     def assign_peaks(self):
@@ -240,9 +243,9 @@ class MainWindow(tk.Frame):
 
         master_geometry = list(map(int, self.master.winfo_geometry().split('+')[1:]))
 
-        dropped_place = (event.y_root - master_geometry[1] - 30) / self.height
+        dropped_place = (event.y_root - master_geometry[1] - 30) / self.height_canvas
 
-        threshold = 3 / 2
+        threshold = 1 / 2
 
         if event.data[0] == '{':
             filenames = list(map(lambda x: x.strip('{').strip('}'), event.data.split('} {')))
@@ -478,6 +481,9 @@ class MainWindow(tk.Frame):
           ことがあります。重要なものはSolisを使って\n
           キャリブレーションしてください
         ''')
+
+    def open_database(self):
+        webbrowser.open('https://www.chem.ualberta.ca/~mccreery/ramanmaterials.html')
 
     def quit(self) -> None:
         self.master.quit()
