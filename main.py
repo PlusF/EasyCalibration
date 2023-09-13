@@ -138,7 +138,6 @@ class MainWindow(tk.Frame):
         self.center = tk.DoubleVar(value=630)
         self.dimension = tk.StringVar(value=self.calibrator.get_dimension_list()[0])
         self.function = tk.StringVar(value=self.calibrator.get_function_list()[0])
-        self.easy = tk.BooleanVar(value=False)
         self.optionmenu_function = ttk.OptionMenu(frame_ref, self.function, self.calibrator.get_function_list()[0], *self.calibrator.get_function_list())
         self.optionmenu_function.config(width=10)
         self.optionmenu_function['menu'].config(font=font_sm)
@@ -153,7 +152,6 @@ class MainWindow(tk.Frame):
         optionmenu_dimension = ttk.OptionMenu(frame_ref, self.dimension, *self.calibrator.get_dimension_list())
         optionmenu_dimension.config(width=10)
         optionmenu_dimension['menu'].config(font=font_sm)
-        checkbutton_easy = ttk.Checkbutton(frame_ref, text='easy', variable=self.easy, command=self.switch_easy)
         self.button_calibrate = ttk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
 
         label_ref.grid(row=0, column=0, columnspan=6)
@@ -162,7 +160,6 @@ class MainWindow(tk.Frame):
         self.combobox_center.grid(row=1, column=2)
         optionmenu_dimension.grid(row=2, column=0)
         self.optionmenu_function.grid(row=2, column=1)
-        checkbutton_easy.grid(row=2, column=2)
         self.button_calibrate.grid(row=3, column=0, columnspan=6)
 
         # frame_msg
@@ -214,21 +211,23 @@ class MainWindow(tk.Frame):
             messagebox.showerror('Error', 'Choose range.')
             self.show_spectrum_ref()
             return
+        spec_ref = self.dl_ref.spec_dict[self.filename_ref.get()]
+        self.calibrator.set_data(spec_ref.xdata, spec_ref.ydata)
         if self.measurement.get() == 'Rayleigh':
             wavelength_range = 134
             initial_xdata = np.linspace(self.center.get() - wavelength_range / 2,
                                         self.center.get() + wavelength_range / 2,
                                         self.dl_ref.spec_dict[self.filename_ref.get()].xdata.shape[0])
+            self.calibrator.xdata = initial_xdata
         self.calibrator.set_measurement(self.measurement.get())
         self.calibrator.set_material(self.material.get())
         self.calibrator.set_dimension(int(self.dimension.get()[0]))
         self.calibrator.set_function(self.function.get())
-        self.calibrator.set_search_width(50)
         ok = self.calibrator.calibrate(mode='manual', ranges=self.ranges, x_true=self.assign_peaks())
         if not ok:
             self.msg.set('Calibration failed.')
             return
-        self.update_treeview()
+        self.button_calibrate.config(state=tk.DISABLED)
         self.button_download.config(state=tk.ACTIVE)
         msg = 'Successfully calibrated.\nYou can now download the calibrated data.\n'
 
@@ -269,6 +268,7 @@ class MainWindow(tk.Frame):
                 self.dl_ref.delete_file(self.filename_ref.get())
             self.setattr_to_all_raw('abs_path_ref', filename)
             self.filename_ref.set(filename)
+            self.tooltip.set(filename)
             self.dl_ref.load_file(filename)
             self.rectangles = []
             self.ranges = []
@@ -292,26 +292,21 @@ class MainWindow(tk.Frame):
         if self.dl_ref.spec_dict[filename].device == 'Renishaw':
             self.calibrator.set_measurement('Raman')
             self.measurement.set('Raman')
-        elif self.dl_ref.spec_dict[filename].device in ['Andor', 'CSS']:
+        elif self.dl_ref.spec_dict[filename].device in ['CSS']:
             self.calibrator.set_measurement('Rayleigh')
             self.measurement.set('Rayleigh')
             self.material.set(self.calibrator.get_material_list()[0])
-            self.easy.set(True)
             self.optionmenu_function.config(state=tk.DISABLED)
+        for measurement in self.calibrator.get_measurement_list():
+            for material in list(self.calibrator.database[measurement].keys())[1:]:
+                if material in filename:
+                    self.measurement.set(measurement)
+                    self.material.set(material)
         for center in ['500', '630', '760']:
             if center in filename:
                 self.center.set(float(center))
-        for material in self.calibrator.get_material_list():
-            if material in filename:
-                self.material.set(material)
 
         self.change_measurement()
-
-    def switch_easy(self):
-        if self.easy.get():
-            self.optionmenu_function.config(state=tk.DISABLED)
-        else:
-            self.optionmenu_function.config(state=tk.ACTIVE)
 
     def update_treeview(self) -> None:
         self.treeview.delete(*self.treeview.get_children())
@@ -344,6 +339,7 @@ class MainWindow(tk.Frame):
         self.dl_ref.delete_file(self.filename_ref.get())
         self.msg.set(f'Deleted {self.filename_ref.get()}.')
         self.filename_ref.set('')
+        self.tooltip.set('')
 
     @update_plot
     def select_data(self, event) -> None:
@@ -437,10 +433,9 @@ class MainWindow(tk.Frame):
         self.canvas.draw()
 
     def download(self) -> None:
+        msg = 'Successfully downloaded.\n'
         for filename in self.dl_raw.spec_dict.keys():
             self.dl_raw.save(filename)
-        msg = 'Successfully downloaded.\n'
-        for filename in self.calibrator.filename_raw_list:
             msg += os.path.basename(filename) + '\n'
         self.msg.set(msg)
 
@@ -450,9 +445,10 @@ class MainWindow(tk.Frame):
         self.ranges = []
         self.treeview.delete(*self.treeview.get_children())
         self.filename_ref.set('')
+        self.tooltip.set('')
         self.dl_raw.__init__()
         self.dl_ref.__init__()
-        self.calibrator.__init__()
+        self.calibrator.__init__(measurement='Raman', material='sulfur', dimension=1)
         self.button_download.config(state=tk.DISABLED)
         self.button_calibrate.config(state=tk.DISABLED)
         self.msg.set(f'Reset.')
@@ -467,9 +463,7 @@ class MainWindow(tk.Frame):
         参照ピークが・・・\n2本か3本しかないとき:Linear\n
         中心波長付近にあるとき: Quadratic\n
         全体に分布しているとき: Cubic\n\n
-        easyをonにするとフィッティングなしで\n
-          最大値抽出でピーク検出が行われます\n\n
-        Rayleighのデータはずれが大きく正しくできない\n
+        Andorのデータはずれが大きく正しくできない\n
           ことがあります。重要なものはSolisを使って\n
           キャリブレーションしてください
         ''')
