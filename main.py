@@ -182,19 +182,6 @@ class MainWindow(tk.Frame):
         self.canvas_drop.create_text(self.width * 3 / 2, self.height * 9 / 4, text='Reference Data',
                                      font=('Arial', 30))
 
-    def change_measurement(self, event=None):
-        if self.measurement.get() == 'Raman':
-            self.combobox_center.config(state=tk.DISABLED)
-        elif self.measurement.get() == 'Rayleigh':
-            self.combobox_center.config(state=tk.ACTIVE)
-        self.calibrator.set_measurement(self.measurement.get())
-        # update material
-        self.optionmenu_material['menu'].delete(0, 'end')
-        material_list = self.calibrator.get_material_list()
-        for material in material_list:
-            self.optionmenu_material['menu'].add_command(label=material, command=tk._setit(self.material, material))
-        self.material.set(material_list[0])
-
     def assign_peaks(self):
         x_true = self.calibrator.get_true_x()
         found_x_true = []
@@ -289,24 +276,38 @@ class MainWindow(tk.Frame):
         self.canvas_drop.place_forget()
 
     def check_data_type(self, filename):
+        # deviceで判別できる場合
         if self.dl_ref.spec_dict[filename].device == 'Renishaw':
             self.calibrator.set_measurement('Raman')
             self.measurement.set('Raman')
         elif self.dl_ref.spec_dict[filename].device in ['CSS']:
             self.calibrator.set_measurement('Rayleigh')
             self.measurement.set('Rayleigh')
-            self.material.set(self.calibrator.get_material_list()[0])
-            self.optionmenu_function.config(state=tk.DISABLED)
-        for measurement in self.calibrator.get_measurement_list():
-            for material in list(self.calibrator.database[measurement].keys())[1:]:
-                if material in filename:
-                    self.measurement.set(measurement)
-                    self.material.set(material)
+        self.change_measurement()
         for center in ['500', '630', '760']:
             if center in filename:
                 self.center.set(float(center))
 
-        self.change_measurement()
+        # filenameに物質名が入っている場合
+        for measurement in self.calibrator.get_measurement_list():
+            for material in list(self.calibrator.database[measurement].keys())[1:]:
+                if material in filename:
+                    self.measurement.set(measurement)
+                    self.change_measurement()
+                    self.material.set(material)
+
+    def change_measurement(self, event=None):
+        if self.measurement.get() == 'Raman':
+            self.combobox_center.config(state=tk.DISABLED)
+        elif self.measurement.get() == 'Rayleigh':
+            self.combobox_center.config(state=tk.ACTIVE)
+        self.calibrator.set_measurement(self.measurement.get())
+        # update material
+        self.optionmenu_material['menu'].delete(0, 'end')
+        material_list = self.calibrator.get_material_list()
+        for material in material_list:
+            self.optionmenu_material['menu'].add_command(label=material, command=tk._setit(self.material, material))
+        self.material.set(material_list[0])
 
     def update_treeview(self) -> None:
         self.treeview.delete(*self.treeview.get_children())
@@ -327,7 +328,14 @@ class MainWindow(tk.Frame):
     def show_spectrum_ref(self) -> None:
         if self.filename_ref.get() == '':
             return
-        self.show_spectrum(self.dl_ref.spec_dict[self.filename_ref.get()])
+        # キャリブレーション後は詳細を表示
+        if self.calibrator.xdata_before is not None:
+            for r in self.rectangles:
+                self.ax.add_patch(r)
+            self.calibrator.show_fit_result(self.ax)
+        # キャリブレーション前はスペクトルのみ表示
+        else:
+            self.show_spectrum(self.dl_ref.spec_dict[self.filename_ref.get()])
 
     @update_plot
     def delete_spectrum_ref(self) -> None:
@@ -363,6 +371,9 @@ class MainWindow(tk.Frame):
 
     def on_press(self, event):
         if event.xdata is None or event.ydata is None:
+            return
+        # Toolbarのズーム機能を使っている状態では動作しないようにする
+        if self.toolbar._buttons['Zoom'].var.get():
             return
         self.x0 = event.xdata
         self.y0 = event.ydata
