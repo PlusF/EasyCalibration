@@ -61,9 +61,13 @@ class MainWindow(tk.Frame):
 
         self.x0, self.y0, self.x1, self.y1 = 0, 0, 0, 0
         self.rectangles = []
+        self.texts = []
         self.ranges = []
         self.drawing = False
         self.rect_drawing = None
+
+        self.new_window = None
+        self.widgets_assign = {}
 
         self.dl_raw = DataLoader()
         self.dl_ref = DataLoader()
@@ -138,9 +142,6 @@ class MainWindow(tk.Frame):
         self.center = tk.DoubleVar(value=630)
         self.dimension = tk.StringVar(value=self.calibrator.get_dimension_list()[0])
         self.function = tk.StringVar(value=self.calibrator.get_function_list()[0])
-        self.optionmenu_function = ttk.OptionMenu(frame_ref, self.function, self.calibrator.get_function_list()[0], *self.calibrator.get_function_list())
-        self.optionmenu_function.config(width=10)
-        self.optionmenu_function['menu'].config(font=font_sm)
         optionmenu_measurement = ttk.OptionMenu(frame_ref, self.measurement, self.calibrator.get_measurement_list()[0], *self.calibrator.get_measurement_list(), command=self.change_measurement)
         optionmenu_measurement.config(width=10)
         optionmenu_measurement['menu'].config(font=font_sm)
@@ -152,15 +153,20 @@ class MainWindow(tk.Frame):
         optionmenu_dimension = ttk.OptionMenu(frame_ref, self.dimension, *self.calibrator.get_dimension_list())
         optionmenu_dimension.config(width=10)
         optionmenu_dimension['menu'].config(font=font_sm)
+        self.optionmenu_function = ttk.OptionMenu(frame_ref, self.function, self.calibrator.get_function_list()[0], *self.calibrator.get_function_list())
+        self.optionmenu_function.config(width=10)
+        self.optionmenu_function['menu'].config(font=font_sm)
+        button_assign_manually = ttk.Button(frame_ref, text='ASSIGN', command=self.open_assign_window)
+        self.frame_assign = None
         self.button_calibrate = ttk.Button(frame_ref, text='CALIBRATE', command=self.calibrate, state=tk.DISABLED)
-
         self.label_ref.grid(row=0, column=0, columnspan=6)
         optionmenu_measurement.grid(row=1, column=0)
         self.optionmenu_material.grid(row=1, column=1)
         self.combobox_center.grid(row=1, column=2)
         optionmenu_dimension.grid(row=2, column=0)
         self.optionmenu_function.grid(row=2, column=1)
-        self.button_calibrate.grid(row=3, column=0, columnspan=6)
+        button_assign_manually.grid(row=2, column=2)
+        self.button_calibrate.grid(row=3, column=0, columnspan=3)
 
         # frame_msg
         self.msg = tk.StringVar(value='Please drag & drop data files.')
@@ -184,7 +190,42 @@ class MainWindow(tk.Frame):
         self.canvas_drop.create_text(self.width_canvas / 2, self.height_canvas * 3 / 4, text='Reference Data',
                                      font=('Arial', 30))
 
-    def assign_peaks(self):
+    def open_assign_window(self):
+        self.new_window = tk.Toplevel(self.master)
+        self.new_window.title('Assign Peaks')
+
+        self.frame_assign = ttk.Frame(self.new_window)
+        self.frame_assign.pack(fill=tk.BOTH, expand=True)
+
+        label_description = ttk.Label(self.frame_assign, text='適用したい場合はウィンドウを開いたままにしてください．')
+        label_index = ttk.Label(self.frame_assign, text='Index')
+        label_x = ttk.Label(self.frame_assign, text='x')
+        label_description.grid(row=0, column=0, columnspan=2)
+        label_index.grid(row=1, column=0)
+        label_x.grid(row=1, column=1)
+
+        self.refresh_assign_window()
+
+    def refresh_assign_window(self):
+        # clear
+        for w in self.widgets_assign.values():
+            for ww in w:
+                ww.destroy()
+        self.widgets_assign = {}
+        # create
+        self.calibrator.set_measurement(self.measurement.get())
+        self.calibrator.set_material(self.material.get())
+        x_true = self.calibrator.get_true_x()
+        auto_x_true = self.assign_peaks_automatically()
+        for i, (r, auto) in enumerate(zip(self.ranges, auto_x_true)):
+            label_index = ttk.Label(self.frame_assign, text=str(self.ranges.index(r)))
+            combobox_x = ttk.Combobox(self.frame_assign, values=list(x_true), justify=tk.CENTER)
+            combobox_x.set(auto)
+            label_index.grid(row=i + 2, column=0)
+            combobox_x.grid(row=i + 2, column=1)
+            self.widgets_assign[i] = (label_index, combobox_x)
+
+    def assign_peaks_automatically(self):
         x_true = self.calibrator.get_true_x()
         found_x_true = []
         for x0, y0, x1, y1 in self.ranges:
@@ -192,6 +233,15 @@ class MainWindow(tk.Frame):
             diff = np.abs(x_true - x_mid)
             idx = np.argmin(diff)
             found_x_true.append(x_true[idx])
+        return found_x_true
+
+    def assign_peaks(self):
+        if self.new_window is None or not self.new_window.winfo_exists():
+            return self.assign_peaks_automatically()
+        found_x_true = []
+        for widgets in self.widgets_assign.values():
+            x = widgets[1].get()
+            found_x_true.append(float(x))
         return found_x_true
 
     @update_plot
@@ -260,7 +310,9 @@ class MainWindow(tk.Frame):
             self.label_ref.set_tooltip_text(filename)
             self.dl_ref.load_file(filename)
             self.rectangles = []
+            self.texts = []
             self.ranges = []
+            self.refresh_assign_window()
             self.show_spectrum(self.dl_ref.spec_dict[filename])
             self.check_data_type(filename)
             self.button_calibrate.config(state=tk.ACTIVE)
@@ -298,6 +350,9 @@ class MainWindow(tk.Frame):
                     self.change_measurement()
                     self.material.set(material)
 
+        self.calibrator.set_measurement(self.measurement.get())
+        self.calibrator.set_material(self.material.get())
+
     def change_measurement(self, event=None):
         if self.measurement.get() == 'Raman':
             self.combobox_center.config(state=tk.DISABLED)
@@ -310,6 +365,7 @@ class MainWindow(tk.Frame):
         for material in material_list:
             self.optionmenu_material['menu'].add_command(label=material, command=tk._setit(self.material, material))
         self.material.set(material_list[0])
+        self.calibrator.set_material(material_list[0])
 
     def update_treeview(self) -> None:
         self.treeview.delete(*self.treeview.get_children())
@@ -332,12 +388,16 @@ class MainWindow(tk.Frame):
             return
         # キャリブレーション後は詳細を表示
         if self.calibrator.xdata_before is not None:
-            for r in self.rectangles:
-                self.ax.add_patch(r)
             self.calibrator.show_fit_result(self.ax)
         # キャリブレーション前はスペクトルのみ表示
         else:
             self.show_spectrum(self.dl_ref.spec_dict[self.filename_ref.get()])
+
+        self.texts = []
+        for ran, rec in zip(self.ranges, self.rectangles):
+            self.ax.add_patch(rec)
+            t = self.ax.text(ran[2], ran[3], str(self.ranges.index(ran)), color='r', fontsize=20)
+            self.texts.append(t)
 
     @update_plot
     def delete_spectrum_ref(self) -> None:
@@ -408,9 +468,13 @@ class MainWindow(tk.Frame):
         r = patches.Rectangle((x0, y0), x1 - x0, y1 - y0, linewidth=1, edgecolor='r',
                               facecolor='none')
         self.ax.add_patch(r)
+        t = self.ax.text(x1, y1, str(len(self.rectangles)), color='r', fontsize=20)
         self.rectangles.append(r)
+        self.texts.append(t)
         self.ranges.append((x0, y0, x1, y1))
         self.canvas.draw()
+        if self.new_window is not None and self.new_window.winfo_exists():
+            self.refresh_assign_window()
 
     def draw_preview(self, event):
         if event.xdata is None or event.ydata is None:
@@ -442,6 +506,8 @@ class MainWindow(tk.Frame):
             return
         self.rectangles[-1].remove()
         self.rectangles.pop()
+        self.texts[-1].remove()
+        self.texts.pop()
         self.ranges.pop()
         self.canvas.draw()
 
@@ -455,7 +521,9 @@ class MainWindow(tk.Frame):
     @update_plot
     def reset(self):
         self.rectangles = []
+        self.texts = []
         self.ranges = []
+        self.refresh_assign_window()
         self.treeview.delete(*self.treeview.get_children())
         self.filename_ref.set('')
         self.label_ref.set_tooltip_text('')
